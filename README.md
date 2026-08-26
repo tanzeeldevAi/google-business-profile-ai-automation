@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-673%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-682%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -169,11 +169,11 @@ python test/test_site.py      #  63 checks: website reading, discovery, groundin
 python test/test_keywords.py  #  84 checks: search terms, coverage, clustering
 python test/test_competitors.py # 70 checks: map-pack comparison, NAP consistency
 python test/test_dashboard.py   # 70 checks: the dashboard's command whitelist and path guards
-python test/test_app.py         # 50 checks: multi-business separation and the API's guards
+python test/test_app.py         # 59 checks: multi-business separation, sign-in, API guards
 python test/smoke_test.py     # 150 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**673 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**682 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -252,9 +252,13 @@ Then open **http://localhost:3000**.
      what you see          the work              the CLI
 ```
 
-**Connect once, manage many.** Sign in with the Google account that manages the profiles, click
-*Find my business profiles*, and every profile that account manages appears in the picker at the
-top. Switch business and every screen follows.
+**Connect once, manage many.** Sign in with the Google account that manages the profiles and every
+profile it manages appears in the picker at the top. Switch business and every screen follows.
+
+Sign-in is a real OAuth redirect: the app opens Google's consent screen, Google comes back to
+`127.0.0.1:8790/api/auth/callback`, and the businesses are discovered straight away. It forces the
+account picker every time, so **signing in as a different account works** — from the terminal that
+is `python run.py login --switch`.
 
 | Screen | |
 |---|---|
@@ -650,7 +654,7 @@ gbp/
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                673 offline checks
+test/                682 offline checks
 ```
 
 ---

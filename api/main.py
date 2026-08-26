@@ -35,7 +35,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -272,6 +272,108 @@ def status(request: Request) -> dict:
         "active": profiles.active(),
         "job": JOBS.current.snapshot(10**9) if JOBS.current else None,
     }
+
+
+# ----------------------------------------------------------------- sign-in
+#
+# A real OAuth redirect, not a subprocess. The CLI's `login` blocks on a local
+# server and -- if a valid token already exists -- returns instantly without
+# ever showing a browser, so "sign in as a different account" did nothing. This
+# owns the redirect, so switching accounts works and the user gets feedback.
+
+# One-shot CSRF states. A callback carrying a state we did not issue is either
+# stale or forged, and is refused.
+_STATES: dict[str, float] = {}
+
+
+def _redirect_uri(request: Request) -> str:
+    # Must match what was sent to Google exactly. The client is a Desktop type,
+    # for which Google accepts any loopback port, so nothing needs registering.
+    return f"http://127.0.0.1:{request.url.port or 8790}/api/auth/callback"
+
+
+@app.get("/api/auth/start")
+def auth_start(request: Request) -> dict:
+    guard(request)
+    state = secrets.token_urlsafe(24)
+    now = time.time()
+    # Drop anything older than ten minutes rather than growing forever.
+    for old, when in list(_STATES.items()):
+        if now - when > 600:
+            _STATES.pop(old, None)
+    _STATES[state] = now
+    try:
+        return {"url": auth.auth_url(_redirect_uri(request), state)}
+    except AuthError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/auth/callback")
+def auth_callback(request: Request, code: str | None = None,
+                  state: str | None = None, error: str | None = None):
+    """Where Google sends the browser back. Returns a page, not JSON."""
+    def page(title: str, body: str, ok: bool) -> HTMLResponse:
+        colour = "#4ADE80" if ok else "#F87171"
+        return HTMLResponse(
+            f"""<!doctype html><meta charset="utf-8">
+<title>{title}</title>
+<body style="margin:0;background:#0F1115;color:#E8EAEE;font:16px/1.6 system-ui,
+sans-serif;display:grid;place-items:center;height:100vh;text-align:center">
+<div style="max-width:30rem;padding:2rem">
+  <div style="font-size:2rem;color:{colour};margin-bottom:.5rem">
+    {"&#10003;" if ok else "&#10007;"}</div>
+  <h1 style="font-size:1.25rem;margin:0 0 .5rem">{title}</h1>
+  <p style="color:#A2ABB8;margin:0 0 1.5rem">{body}</p>
+  <p style="color:#6C7685;font-size:.85rem">You can close this tab.</p>
+</div>
+<script>setTimeout(function(){{ window.close(); }}, 2500);</script>
+</body>""", status_code=200 if ok else 400)
+
+    if error:
+        return page("Sign-in cancelled", f"Google said: {error}", False)
+    if not code or not state or state not in _STATES:
+        return page("Sign-in could not be completed",
+                    "That link was already used or has expired. Start again "
+                    "from the Connect screen.", False)
+    _STATES.pop(state, None)
+
+    try:
+        auth.exchange(code, _redirect_uri(request))
+    except AuthError as exc:
+        return page("Sign-in failed", str(exc).replace("\n", " "), False)
+    except Exception as exc:
+        return page("Sign-in failed", f"{type(exc).__name__}: {exc}", False)
+
+    # Discover straight away, so the app has businesses to show when the user
+    # switches back to it rather than an empty picker.
+    found = 0
+    try:
+        db.init()
+        client = Client(auth.credentials(interactive=False))
+        for acct in client.accounts():
+            for loc in client.locations(
+                    acct["name"], read_mask="name,title,storefrontAddress"):
+                addr = loc.get("storefrontAddress") or {}
+                profiles.upsert(loc["name"], acct["name"], loc.get("title", ""),
+                                addr.get("locality", ""))
+                found += 1
+        if found and not profiles.active():
+            profiles.set_active(profiles.all_profiles()[0]["location"])
+    except Exception:
+        # Signing in worked even if discovery did not. Say so honestly rather
+        # than reporting a failed sign-in.
+        return page("Signed in", "Could not list your businesses yet — press "
+                                 "Find my business profiles on the Connect "
+                                 "screen.", True)
+
+    return page("Signed in",
+                f"Found {found} business profile{'' if found == 1 else 's'}.", True)
+
+
+@app.post("/api/auth/signout")
+def auth_signout(request: Request) -> dict:
+    guard(request)
+    return {"signed_out": auth.sign_out()}
 
 
 @app.get("/api/profiles")

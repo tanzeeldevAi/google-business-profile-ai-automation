@@ -24,6 +24,12 @@ from gbp import config  # noqa: E402
 config.DATA_DIR = _tmp / "data"
 config.REPORT_DIR = _tmp / "reports"
 config.DB_PATH = config.DATA_DIR / "gbp.db"
+# EVERY path, not just the database. Missing these two cost a real login: the
+# sign-out test below deleted the operator's actual token.json because
+# TOKEN_PATH still pointed at the live one. A test must never be able to touch
+# real credentials.
+config.TOKEN_PATH = config.DATA_DIR / "token.json"
+config.CLIENT_SECRET_PATH = config.DATA_DIR / "client_secret.json"
 
 from gbp import db, profiles, rules  # noqa: E402
 
@@ -193,6 +199,45 @@ try:
 except ImportError:
     check("fastapi is installed for the app tests", False,
           "pip install -r api/requirements.txt")
+
+print("\n== signing in ==")
+# The bug this replaced: `run.py login` returns instantly when a valid token
+# already exists, without ever opening a browser — so "sign in as a different
+# account" silently did nothing at all. The web flow owns the redirect instead,
+# and forces the account picker.
+import json as _json  # noqa: E402
+import urllib.parse as _u  # noqa: E402
+from gbp import auth as _auth  # noqa: E402
+
+# A throwaway client, in the temp dir. Nothing here touches the real one.
+config.CLIENT_SECRET_PATH.parent.mkdir(parents=True, exist_ok=True)
+config.CLIENT_SECRET_PATH.write_text(_json.dumps({"installed": {
+    "client_id": "test.apps.googleusercontent.com",
+    "client_secret": "not-a-real-secret",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "redirect_uris": ["http://localhost"],
+}}), encoding="utf-8")
+
+_url = _auth.auth_url("http://127.0.0.1:8790/api/auth/callback", "st4te")
+_q = dict(_u.parse_qsl(_u.urlparse(_url).query))
+check("the consent URL points at Google",
+      _u.urlparse(_url).netloc == "accounts.google.com", _url[:60])
+check("it asks for offline access, so a refresh token comes back",
+      _q.get("access_type") == "offline")
+check("it forces the account picker, so switching accounts WORKS",
+      "select_account" in _q.get("prompt", ""), str(_q.get("prompt")))
+check("it carries the CSRF state", _q.get("state") == "st4te")
+check("it asks for the one Business Profile scope",
+      _q.get("scope") == "https://www.googleapis.com/auth/business.manage")
+check("the redirect comes back to us",
+      _q.get("redirect_uri") == "http://127.0.0.1:8790/api/auth/callback")
+
+config.TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+config.TOKEN_PATH.write_text("{}", encoding="utf-8")
+check("signing out removes the saved token", _auth.sign_out())
+check("the token file is really gone", not config.TOKEN_PATH.exists())
+check("signing out twice is harmless", _auth.sign_out() is False)
 
 print(f"\n  {pass_count} passed, {len(fails)} failed\n")
 for f_ in fails:

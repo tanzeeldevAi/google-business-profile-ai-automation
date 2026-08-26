@@ -105,6 +105,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => call<Status>("/api/status"),
+  authStart: () => call<{ url: string }>("/api/auth/start"),
+  signOut: () => call<{ signed_out: boolean }>("/api/auth/signout", { method: "POST" }),
   profiles: () => call<{ profiles: Profile[]; active: string }>("/api/profiles"),
   discover: () =>
     call<{ found: { location: string; title: string; city: string }[]; active: string }>(

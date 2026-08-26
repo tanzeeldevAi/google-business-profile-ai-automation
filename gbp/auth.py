@@ -29,7 +29,7 @@ from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 
 from . import config
 
@@ -133,6 +133,66 @@ def credentials(interactive: bool = True) -> Credentials:
     )
     _save(creds)
     return creds
+
+
+# --------------------------------------------------------------- web sign-in
+
+def _client_config() -> dict:
+    if not config.CLIENT_SECRET_PATH.exists():
+        raise AuthError(
+            f"{config.CLIENT_SECRET_PATH.name} is missing.\n\n"
+            "  Download it from Google Cloud Console -> APIs & Services\n"
+            "  -> Credentials -> your OAuth 2.0 Client ID -> Download JSON,\n"
+            f"  and save it as:  {config.CLIENT_SECRET_PATH}")
+    return json.loads(config.CLIENT_SECRET_PATH.read_text(encoding="utf-8"))
+
+
+def auth_url(redirect_uri: str, state: str) -> str:
+    """The Google consent URL for the web app's sign-in.
+
+    The CLI uses `run_local_server`, which spins up its own server and blocks
+    until the callback arrives. That is wrong for a web app: the request would
+    hang, and -- worse -- if a valid token already exists it returns instantly
+    without ever showing a browser, so "sign in as a different account" does
+    nothing at all. This builds the URL instead and lets the app own the
+    redirect.
+
+    `prompt="select_account consent"` is what makes switching accounts work:
+    without it Google silently reuses whoever is already signed in.
+    """
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES,
+                                   redirect_uri=redirect_uri)
+    url, _ = flow.authorization_url(
+        access_type="offline",          # ask for a refresh token
+        prompt="select_account consent",  # always show the picker
+        include_granted_scopes="true",
+        state=state,
+    )
+    return url
+
+
+def exchange(code: str, redirect_uri: str) -> Credentials:
+    """Swap the callback's code for credentials, and save them."""
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES,
+                                   redirect_uri=redirect_uri)
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    if not creds.refresh_token:
+        # Without one the login dies at the first expiry and cannot renew.
+        raise AuthError(
+            "Google returned no refresh token.\n"
+            "  Remove this app at https://myaccount.google.com/permissions "
+            "and sign in again.")
+    _save(creds)
+    return creds
+
+
+def sign_out() -> bool:
+    """Forget the saved login. The next sign-in starts from the account picker."""
+    if config.TOKEN_PATH.exists():
+        config.TOKEN_PATH.unlink()
+        return True
+    return False
 
 
 def token_age_days() -> float | None:

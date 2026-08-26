@@ -6,10 +6,64 @@ import { Button, Card, Empty } from "@/components/ui";
 import { api } from "@/lib/api";
 
 export default function Connect() {
-  const { status, profiles, refresh, run, running } = useApp();
+  const { status, profiles, refresh } = useApp();
   const [found, setFound] = useState<{ location: string; title: string; city: string }[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState("");
+
+  /**
+   * Sign in through a real OAuth redirect.
+   *
+   * The old version shelled out to `run.py login`, which blocks on its own
+   * local server and — if a valid token already existed — returned instantly
+   * without ever opening a browser. Clicking "sign in" appeared to do nothing,
+   * and signing in as a DIFFERENT account was impossible.
+   *
+   * Now: get the consent URL, open it, and poll until the callback has saved a
+   * token. Popup blocked? Fall back to a link the user can click.
+   */
+  const signIn = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const { url } = await api.authStart();
+      const win = window.open(url, "gbp-signin", "width=520,height=680");
+      if (!win) {
+        setError("Your browser blocked the sign-in window. Allow pop-ups for this page, or open the link that just copied to your clipboard.");
+        await navigator.clipboard?.writeText(url).catch(() => {});
+        setBusy(false);
+        return;
+      }
+      setWaiting(true);
+
+      // Poll rather than trusting the popup to talk back: it ends up on
+      // Google's origin, so we cannot read from it.
+      const started = Date.now();
+      const timer = setInterval(async () => {
+        try {
+          const s = await api.status();
+          if (s.google.signed_in && (s.google.token_age_days ?? 99) < 0.02) {
+            clearInterval(timer);
+            setWaiting(false);
+            setBusy(false);
+            win.close();
+            await refresh();
+            await discover();
+          }
+        } catch { /* the API may be briefly busy; keep waiting */ }
+        if (Date.now() - started > 4 * 60 * 1000) {
+          clearInterval(timer);
+          setWaiting(false);
+          setBusy(false);
+          setError("Timed out waiting for Google. Try again.");
+        }
+      }, 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
 
   const discover = async () => {
     setBusy(true);
@@ -34,15 +88,37 @@ export default function Connect() {
           Profile. The login is saved locally and reused, so you only do this once.
         </p>
         <div className="flex items-center gap-3 flex-wrap">
-          <Button kind="primary" disabled={running} onClick={() => run("login")}>
-            {status?.google.signed_in ? "Sign in again" : "Sign in to Google"}
+          <Button kind="primary" disabled={busy} onClick={signIn}>
+            {waiting
+              ? "Waiting for Google…"
+              : status?.google.signed_in
+              ? "Sign in with a different account"
+              : "Sign in to Google"}
           </Button>
-          {status?.google.signed_in && (
-            <span className="text-sm text-good">
-              Signed in · token {status.google.token_age_days} days old
-            </span>
+          {status?.google.signed_in && !waiting && (
+            <>
+              <span className="text-sm text-good">
+                Signed in · token {status.google.token_age_days} days old
+              </span>
+              <button
+                className="text-xs text-ink-3 hover:text-bad"
+                onClick={async () => {
+                  if (!confirm("Sign out?\n\nThe connected businesses stay in the list; you just have to sign in again to act on them.")) return;
+                  await api.signOut();
+                  await refresh();
+                }}
+              >
+                sign out
+              </button>
+            </>
           )}
         </div>
+        {waiting && (
+          <p className="text-sm text-warn mt-3">
+            A Google window opened. Pick the account, approve access, and this
+            page will carry on by itself.
+          </p>
+        )}
         <p className="text-xs text-ink-3 mt-4 leading-relaxed">
           If your OAuth consent screen is still in Testing mode, Google expires the
           login every 7 days. Publishing the app in Cloud Console stops that, and you

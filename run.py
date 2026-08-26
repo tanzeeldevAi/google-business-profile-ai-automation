@@ -202,6 +202,12 @@ def cmd_doctor(args) -> int:
 
 
 def cmd_login(args) -> int:
+    # Without this, a still-valid token makes `login` return instantly without
+    # ever showing a browser -- so there is no way to sign in as a different
+    # account. Same trap the web app hit.
+    if getattr(args, "switch", False):
+        auth.sign_out()
+        print("\n  Signed out. Opening the account picker...")
     auth.credentials(interactive=True)
     print("\n  Signed in. Token saved to data/token.json\n")
     print("  If your OAuth consent screen is still in Testing mode, this login")
@@ -627,7 +633,9 @@ def main() -> int:
         return p
 
     add("doctor", cmd_doctor, "check config, login and API access", loc=False)
-    add("login", cmd_login, "sign in to Google", loc=False)
+    p = add("login", cmd_login, "sign in to Google", loc=False)
+    p.add_argument("--switch", action="store_true",
+                   help="forget the current login first, to sign in as someone else")
     add("locations", cmd_locations, "list profiles this account manages", loc=False)
 
     p = add("audit", cmd_audit, "score the profile and write a report")
