@@ -20,6 +20,9 @@ data/token.json
 data/
 reports/
 
+# Cached DataForSEO responses -- they contain competitor data for a client.
+data/dataforseo/
+
 # runtime
 .venv/
 venv/

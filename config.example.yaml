@@ -165,6 +165,11 @@ audit:
   # through the API, which it does not do on every account.
   min_social_links: 2
 
+  # How close to the top-3 average is close enough. 0.7 means "within 30% of
+  # what the businesses above you have". Only used when `compare` has run.
+  min_review_share_of_top3: 0.7
+  min_photo_share_of_top3: 0.6
+
   # Set true only for a business with more than one location. It turns on W4,
   # which checks that this location's website field points at ITS OWN page
   # rather than the shared home page. For a single location the home page is
@@ -188,6 +193,41 @@ audit:
 services:
   # How many new services to propose in one run.
   max_new: 6
+
+
+# -----------------------------------------------------------------------------
+# COMPETITORS AND CITATIONS  (optional, needs DataForSEO)
+#
+# Everything else in this tool runs on Google's own API and costs nothing.
+# These two features cannot: Google will only ever describe profiles YOU
+# manage, so seeing who is beating you in the map pack means going outside it.
+#
+# Without DataForSEO credentials in .env, rules X1, X2, X3 and CI2 report
+# "not checked" and nothing else changes.
+#
+#   python run.py compare      who is above you, and by how much
+#   python run.py citations     do the directories show the same phone number
+#
+# Cost: one billed request per keyword for `compare` (capped at 5), and one
+# for `citations`. Fractions of a cent, cached for 24 hours.
+# -----------------------------------------------------------------------------
+competitors:
+  # The searches to check. Use the words a customer types, not your job title.
+  # Max 5 -- each one is a billed request.
+  keywords: []
+  #  - "plumber durham"
+  #  - "emergency plumber durham"
+  #  - "boiler repair durham"
+
+  # Normally left blank: the search is run from the profile's own coordinates,
+  # which is what actually decides the map pack. Set a DataForSEO location name
+  # only if the profile has no coordinates.
+  location_name: ""
+  language_code: en
+
+citations:
+  # How many directory pages to open and read.
+  max_pages: 10
 
 
 # -----------------------------------------------------------------------------

@@ -21,9 +21,10 @@ import sys
 import traceback
 from datetime import datetime, timezone
 
-from gbp import (api, audit as audit_mod, auth, config, db, fix as fix_mod,
-                 holidays, images, keywords as kw_mod, llm, posts, report,
-                 reviews, site as site_mod, watch)
+from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
+                 dataforseo as dfs, db, fix as fix_mod, holidays, images,
+                 keywords as kw_mod, llm, posts, report, reviews,
+                 site as site_mod, watch)
 from gbp.api import ApiError, Client, split_location_id
 from gbp.auth import AuthError
 
@@ -275,6 +276,101 @@ def cmd_post(args) -> int:
     return 0
 
 
+def _our_facts(snap, client=None, account=None, location=None):
+    """Our own review and photo counts, from Google rather than the scrape.
+
+    They are authoritative on our side and only approximate on the competitor
+    side, so we never compare a scraped number of ours against a scraped
+    number of theirs when we have the real one.
+    """
+    reviews = len(snap.reviews) if "reviews" in snap.available else None
+    photos = (len([m for m in snap.media if m.get("mediaFormat") == "PHOTO"])
+              if "media" in snap.available else None)
+    rating = None
+    if reviews:
+        stars = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}
+        vals = [stars.get(r.get("starRating", ""), 0) for r in snap.reviews]
+        vals = [v for v in vals if v]
+        rating = round(sum(vals) / len(vals), 2) if vals else None
+    return reviews, rating, photos
+
+
+def cmd_compare(args) -> int:
+    """How this profile stacks up against whoever is actually ranking.
+
+    The only part of the tool that needs a paid third party: Google's own API
+    will only ever describe profiles you manage, so a competitor comparison is
+    impossible without going outside it.
+    """
+    cfg = config.load(args.config)
+    db.init()
+
+    if not dfs.available():
+        print("\n  This needs DataForSEO credentials in .env:\n"
+              "    DATAFORSEO_LOGIN=...\n    DATAFORSEO_PASSWORD=...\n\n"
+              "  Everything else in this tool works without them.\n")
+        return 1
+
+    client = _client(cfg)
+    account, location, snap, _sk, _site, _kw = _snapshot(
+        client, cfg, args, verbose=not args.quiet, fetch_site=False)
+
+    ccfg = cfg.get("competitors", {}) or {}
+    keywords = ([k.strip() for k in args.keywords.split(",")] if args.keywords
+                else list(ccfg.get("keywords") or []))
+    if not keywords:
+        print("\n  No keywords. Pass --keywords \"plumber durham, boiler "
+              "repair durham\"\n  or set competitors.keywords in config.yaml.\n")
+        return 1
+
+    latlng = snap.location.get("latlng") or {}
+    result = competitors.compare(
+        keywords,
+        our_name=snap.title,
+        our_phone=snap.get("phoneNumbers.primaryPhone", "") or "",
+        our_place_id=snap.get("metadata.placeId", "") or "",
+        latitude=latlng.get("latitude"),
+        longitude=latlng.get("longitude"),
+        location_name=ccfg.get("location_name", ""),
+        language_code=ccfg.get("language_code", "en"),
+        verbose=not args.quiet,
+    )
+
+    reviews, rating, photos = _our_facts(snap)
+    competitors.show(result, our_reviews=reviews, our_rating=rating,
+                     our_photos=photos)
+    return 0
+
+
+def cmd_citations(args) -> int:
+    """Whether the directories showing this business agree on its phone number."""
+    cfg = config.load(args.config)
+    db.init()
+
+    if not dfs.available():
+        print("\n  This needs DataForSEO credentials in .env:\n"
+              "    DATAFORSEO_LOGIN=...\n    DATAFORSEO_PASSWORD=...\n")
+        return 1
+
+    client = _client(cfg)
+    _account, _location, snap, _sk, _site, _kw = _snapshot(
+        client, cfg, args, verbose=not args.quiet, fetch_site=False)
+
+    ccfg = cfg.get("competitors", {}) or {}
+    check = citations.find(
+        snap.title,
+        snap.locality or (cfg.get("business", {}) or {}).get("city", ""),
+        snap.get("phoneNumbers.primaryPhone", "") or "",
+        location_name=ccfg.get("location_name", ""),
+        language_code=ccfg.get("language_code", "en"),
+        max_pages=int((cfg.get("citations", {}) or {}).get("max_pages", 10)),
+        user_agent=(cfg.get("website", {}) or {}).get("user_agent", ""),
+        verbose=not args.quiet,
+    )
+    citations.show(check)
+    return 0
+
+
 def cmd_keywords(args) -> int:
     """What people typed to find this profile, and whether it says those words.
 
@@ -500,6 +596,21 @@ def main() -> int:
     p.add_argument("--force", action="store_true",
                    help="publish even if the post could not be kept inside "
                         "its source page")
+
+    p = sub.add_parser("compare",
+                       help="how you stack up against the map pack")
+    p.set_defaults(func=cmd_compare)
+    p.add_argument("--location", help="locations/12345, or its number")
+    p.add_argument("--keywords",
+                   help="comma-separated, max 5, e.g. \"plumber durham, "
+                        "boiler repair durham\"")
+    p.add_argument("--quiet", action="store_true", help="skip the fetch log")
+
+    p = sub.add_parser("citations",
+                       help="do directories show the same phone number")
+    p.set_defaults(func=cmd_citations)
+    p.add_argument("--location", help="locations/12345, or its number")
+    p.add_argument("--quiet", action="store_true", help="skip the fetch log")
 
     p = sub.add_parser("keywords",
                        help="what people typed to find this profile")

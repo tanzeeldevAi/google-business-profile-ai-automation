@@ -2,7 +2,7 @@
 
 # GBP Autopilot — Audit, Fix and Run a Google Business Profile
 
-**Scores a Google Business Profile against 53 local SEO rules, writes a client-ready report,
+**Scores a Google Business Profile against 57 local SEO rules, writes a client-ready report,
 fixes what it can through the API, answers every review, posts weekly, sets holiday hours, and
 tells you the moment Google changes something behind your back.**
 
@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-422%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-496%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -47,7 +47,7 @@ and after first.
 
 ## What it checks
 
-53 rules across twelve areas, each weighted by what it actually costs you:
+57 rules across fourteen areas, each weighted by what it actually costs you:
 
 | | |
 |---|---|
@@ -62,6 +62,8 @@ and after first.
 | ❓ **Q&A** | Nothing unanswered, common questions seeded by the owner |
 | 🌐 **Website** | Reachable, the profile's phone actually appears on it, LocalBusiness schema present, **enough pages to back the services and areas** |
 | 🔎 **Search terms** | The words people actually typed to find the profile, and whether the profile says any of them |
+| 🥊 **Against your competitors** | Reviews, photos and categories versus the businesses actually ranking above you *(needs DataForSEO)* |
+| 📒 **Directory listings** | Whether other directories show the same phone number *(needs DataForSEO)* |
 | 📈 **Performance** | 90 days of views and actions from Google's own data |
 
 Each finding says what was found, **why Google cares**, and **what to do about it**. That is what
@@ -82,6 +84,8 @@ makes the report worth sending to a prospect rather than just reading yourself.
 | `run.py post` | Writes and publishes a Google Post, rotating through the services on the profile |
 | `run.py watch` | Fingerprints the profile and reports anything that changed since last time |
 | `run.py keywords` | The search terms Google reports, and which ones the profile never mentions |
+| `run.py compare` | Who is beating you in the map pack, and by how much |
+| `run.py citations` | Whether directories agree with the profile's phone number |
 | `run.py site` | Shows what was read from the business's own website |
 
 **It never invents a fact.** The description and posts are built only from what is already on the
@@ -159,13 +163,14 @@ writer may take claims from, so keep every line true and checkable.
 ### Step 4 — Prove it works before touching a live profile
 
 ```bash
-python test/test_rules.py     # 176 checks: every rule, on a good profile and a broken one
+python test/test_rules.py     # 180 checks: every rule, on a good profile and a broken one
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
 python test/test_keywords.py  #  73 checks: search terms, coverage, clustering
+python test/test_competitors.py # 70 checks: map-pack comparison, NAP consistency
 python test/smoke_test.py     # 110 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**422 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**496 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -227,6 +232,85 @@ python run.py daily --apply       # watch + audit + reviews, in order
 ```
 
 ---
+
+## Comparing against whoever is actually ranking
+
+Every other rule here judges a profile against a fixed number: 20 photos, 25 reviews, 4.0 stars.
+Those are a guess at an average market, and in a real one they are usually wrong in both
+directions. Twenty-five reviews is invisible in central London and dominant in a market town.
+
+```bash
+python run.py compare --keywords "plumber durham, boiler repair durham"
+```
+
+```
+  WHERE YOU RANK
+    plumber durham                           #7
+    boiler repair durham                     not in the top results
+
+  THE TOP 3 IN THAT PACK
+    #   BUSINESS                          REVIEWS  RATING  PHOTOS
+    1   Riverside Plumbing                    412     4.8     180
+    2   City Drains Ltd                       286     4.6     120
+    3   Quick Fix Plumbers                     95     4.2      60
+    ---------------------------------------------------------------
+    you Northgate Plumbing                     30     4.9      24
+
+  THE GAP
+    Reviews    you       30   top-3 average      264   234 behind
+    Rating     you     4.90   top-3 average     4.53   0.37 ahead
+    Photos     you       24   top-3 average      120    96 behind
+
+  CATEGORIES THE TOP 3 USE THAT YOU DO NOT
+    Boiler supplier                          used by 2 of 3
+```
+
+Three rules come from this: **X1** reviews vs the top-3 average, **X2** categories two or more of
+them use that you don't, **X3** photos vs the top-3 average. The same 30 reviews **passes** in a
+market where the top three average 25 and **fails** where they average 400 — which is the whole
+point, and there's a test for exactly that.
+
+Google's own API will only ever describe profiles *you* manage, so this is the one feature that
+needs a paid third party ([DataForSEO](https://dataforseo.com)). Without credentials, X1/X2/X3
+report "not checked" and nothing else changes. One billed request per keyword, capped at five,
+cached for 24 hours.
+
+Two things worth knowing:
+
+- **Competitors' post cadence and review velocity are not compared**, because no third party
+  exposes them. X3 compares photos and says so, rather than being named after something broader
+  than it measures.
+- **Aggregator entries are filtered out.** Some map results are directory pages rather than
+  businesses; averaging your reviews against one of those is meaningless.
+
+## Do the directories agree with you?
+
+```bash
+python run.py citations
+```
+
+Finds the business on known directories and checks the phone number on each against the profile.
+
+```
+    DIRECTORY                  PHONE SHOWN
+    yell.com                   01915550142
+    yelp.com                   01915559999
+    cylex-uk.co.uk             no phone shown
+    checkatrade.com            unread (returned 403)
+
+  1 listing(s) show a DIFFERENT phone number to your Google profile:
+    yelp.com  shows 01915559999
+```
+
+A page with **no** phone visible is reported as "not shown", never as a mismatch — plenty of
+directories hide the number behind a click, and calling that an inconsistency would be a
+fabricated finding. A page we can't read is reported as unread.
+
+> **There is deliberately no citation-count rule.** "Get listed on 40–50 directories" is a number
+> that gets repeated in training material and sold by citation vendors. Consistency across the
+> listings you have is a real ranking factor; volume past the main aggregators is not, and scoring
+> a profile down for having 30 listings instead of 50 would be inventing a problem. There's a test
+> asserting no such rule exists.
 
 ## The words people actually typed
 
@@ -467,7 +551,7 @@ run.py               the CLI
 gbp/
   auth.py            OAuth, token refresh, and the 7-day Testing-mode trap
   api.py             the Business Profile APIs, across all six hosts
-  rules.py           THE RULE SET. 53 local SEO rules, each with why and fix
+  rules.py           THE RULE SET. 57 local SEO rules, each with why and fix
   audit.py           fetches a snapshot, runs the rules, scores it
   report.py          the client-facing HTML report
   fix.py             applies what can be applied, dry-run first
@@ -476,11 +560,14 @@ gbp/
   images.py          post images, and where they may not go
   site.py            reads the business's own website, and the grounding guard
   keywords.py        search terms, coverage analysis, clustering into services
+  competitors.py     the live map pack, and the delta against the top three
+  citations.py       directory listings and NAP consistency
+  dataforseo.py      the one paid dependency, isolated and optional
   holidays.py        which holidays are coming, and which it refuses to guess
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                422 offline checks
+test/                496 offline checks
 ```
 
 ---

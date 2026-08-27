@@ -55,6 +55,8 @@ CATEGORY_LABELS = {
     "qanda": "Questions and answers",
     "website": "Website",
     "keywords": "Search terms",
+    "competitors": "Against your competitors",
+    "offpage": "Directory listings",
     "performance": "Performance",
 }
 
@@ -108,6 +110,12 @@ class Snapshot:
     # Summary of the search terms Google reports for this profile, from
     # keywords.py. Flat for the same reason as `site`.
     keywords: dict[str, Any] = field(default_factory=dict)
+    # Map-pack comparison, from competitors.py. Needs a paid third party, so
+    # this is empty far more often than the rest.
+    competitors: dict[str, Any] = field(default_factory=dict)
+    # Directory listing check, from citations.py. Also needs a paid third
+    # party, so also absent by default.
+    citations: dict[str, Any] = field(default_factory=dict)
     # Which sections we could actually fetch. A section we could not read is
     # reported as unknown, never as a failure -- telling a client their photos
     # are missing when we simply could not look would be worse than useless.
@@ -1410,6 +1418,140 @@ def kw3_top_term_missing(s: Snapshot, cfg: dict) -> Finding:
         fix="Add it as a named service with a description that uses the phrase "
             "naturally, and write a post about it.",
         fixable=True, fix_key="services",
+    )
+
+
+# ================================================================= competitors
+
+@rule
+def x1_reviews_vs_top3(s: Snapshot, cfg: dict) -> Finding:
+    if "competitors" not in s.available:
+        return _unknown("X1", "Reviews against the businesses beating you",
+                        "competitors", "competitor")
+    c = s.competitors
+    ours, theirs = c.get("our_reviews"), c.get("avg_reviews")
+    if ours is None or theirs is None:
+        return _unknown("X1", "Reviews against the businesses beating you",
+                        "competitors", "comparable review")
+
+    # Within this share of the top-3 average is competitive. Being ahead is
+    # obviously fine; the rule is about being far enough behind to be filtered
+    # out before anyone reads the profile.
+    want = float(cfg.get("min_review_share_of_top3", 0.7))
+    share = ours / theirs if theirs else 1.0
+    ok = share >= want
+    gap = max(0, round(theirs - ours))
+    return Finding(
+        "X1", "Reviews against the businesses beating you", "high",
+        "competitors", ok,
+        detail=(f"You have {ours:,}. The top {c.get('rival_count', 3)} in your "
+                f"map pack average {theirs:,.0f}"
+                + (f" -- about {gap:,} behind." if gap else ".")),
+        why="A fixed target like \"get 25 reviews\" is a guess at an average "
+            "market. What matters is the gap to whoever is actually ranking "
+            "above you, because that is who the customer is comparing you "
+            "against in the same three-result list.",
+        fix=(f"Closing {gap:,} reviews at a steady rate is the single highest-"
+             f"value thing on this list. Ask every satisfied customer as the "
+             f"job finishes. Never buy them and never offer anything in "
+             f"exchange -- a sudden spike gets filtered and can cost the "
+             f"profile."
+             if gap else "Hold the lead by keeping the ask part of every job."),
+    )
+
+
+@rule
+def x2_missing_categories(s: Snapshot, cfg: dict) -> Finding:
+    if "competitors" not in s.available:
+        return _unknown("X2", "Categories your competitors use", "competitors",
+                        "competitor")
+    c = s.competitors
+    if not c.get("rival_count"):
+        return _unknown("X2", "Categories your competitors use", "competitors",
+                        "comparable competitor")
+    missing = c.get("missing_categories") or []
+    ok = not missing
+    return Finding(
+        "X2", "Categories your competitors use", "medium", "competitors", ok,
+        detail=("No category is shared by your competitors and missing from "
+                "your profile." if ok else
+                f"{len(missing)} category(ies) used by two or more of the top "
+                f"{c.get('rival_count')} and not on your profile: "
+                f"{', '.join(missing[:6])}."),
+        why="When two of the three businesses ranking above you carry the same "
+            "category, that is how Google understands this market. A category "
+            "you are missing is a set of searches you are not eligible for at "
+            "all, whatever else the profile says.",
+        fix="Add the ones you genuinely offer as secondary categories. Only "
+            "those -- a category for work you do not do will bring calls you "
+            "have to turn down, and dilutes the ones that matter.",
+    )
+
+
+@rule
+def x3_photos_vs_top3(s: Snapshot, cfg: dict) -> Finding:
+    if "competitors" not in s.available:
+        return _unknown("X3", "Photos against the businesses beating you",
+                        "competitors", "competitor")
+    c = s.competitors
+    ours, theirs = c.get("our_photos"), c.get("avg_photos")
+    if ours is None or theirs is None:
+        return _unknown("X3", "Photos against the businesses beating you",
+                        "competitors", "comparable photo")
+
+    want = float(cfg.get("min_photo_share_of_top3", 0.6))
+    share = ours / theirs if theirs else 1.0
+    ok = share >= want
+    gap = max(0, round(theirs - ours))
+    return Finding(
+        "X3", "Photos against the businesses beating you", "medium",
+        "competitors", ok,
+        detail=(f"You have {ours:,}. The top {c.get('rival_count', 3)} average "
+                f"{theirs:,.0f}"
+                + (f" -- about {gap:,} behind." if gap else ".")),
+        why="A thin gallery next to a competitor with three times the photos "
+            "loses the click before anything else on the profile is read. Like "
+            "reviews, the number that matters is theirs, not a fixed target.",
+        fix="Add real photos of finished work until you are within reach of "
+            "them, then keep adding a couple a week. Photos of the actual "
+            "business, taken on site -- Google's guidelines require it.",
+    )
+
+
+@rule
+def ci2_nap_consistency(s: Snapshot, cfg: dict) -> Finding:
+    """Phone consistency across directory listings.
+
+    There is no CI1. "Be on 40 to 50 directories" is a number training material
+    repeats and citation vendors sell; consistency has evidence behind it,
+    volume past the main aggregators does not. Scoring a profile down for
+    having 30 listings instead of 50 would invent a problem.
+    """
+    if "citations" not in s.available:
+        return _unknown("CI2", "Directory listings show the same phone number",
+                        "offpage", "directory listing")
+    c = s.citations
+    if not c.get("read"):
+        return _unknown("CI2", "Directory listings show the same phone number",
+                        "offpage", "readable directory")
+
+    bad = c.get("mismatched") or []
+    ok = not bad
+    names = ", ".join(b["domain"] for b in bad[:4])
+    return Finding(
+        "CI2", "Directory listings show the same phone number", "high",
+        "offpage", ok,
+        detail=(f"All {c['read']} readable listing(s) match." if ok else
+                f"{len(bad)} of {c['read']} readable listing(s) show a "
+                f"different number: {names}."),
+        why="The same name, address and phone everywhere is one of the ways "
+            "Google decides a business is real and its details are current. A "
+            "number that disagrees across listings weakens that, and sends real "
+            "customers to a line nobody answers.",
+        fix="Claim each listing and correct the number to match the Google "
+            "profile exactly. If one of them is an old tracking number, retire "
+            "it -- tracking numbers belong on your own website, never on "
+            "citations.",
     )
 
 
