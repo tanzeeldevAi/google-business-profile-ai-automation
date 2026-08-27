@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-507%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-553%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -163,14 +163,14 @@ writer may take claims from, so keep every line true and checkable.
 ### Step 4 — Prove it works before touching a live profile
 
 ```bash
-python test/test_rules.py     # 180 checks: every rule, on a good profile and a broken one
+python test/test_rules.py     # 186 checks: every rule, on a good profile and a broken one
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
 python test/test_keywords.py  #  84 checks: search terms, coverage, clustering
 python test/test_competitors.py # 70 checks: map-pack comparison, NAP consistency
-python test/smoke_test.py     # 110 checks: audit, report, fixes, reviews, posts, watcher
+python test/smoke_test.py     # 150 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**507 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**553 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -208,7 +208,7 @@ browser, print to PDF, send it.
 ## Daily use
 
 ```bash
-python run.py fix --dry-run       # see the exact before and after
+python run.py fix                 # see the exact before and after
 python run.py fix --apply         # write it
 
 python run.py reviews             # draft replies, show them, send nothing
@@ -572,7 +572,7 @@ gbp/
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                507 offline checks
+test/                553 offline checks
 ```
 
 ---

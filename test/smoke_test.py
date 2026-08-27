@@ -9,6 +9,7 @@ The language model is stubbed, so this is safe and instant to run any time.
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from datetime import date
@@ -258,6 +259,143 @@ check("existing services are preserved, not replaced",
 no_gaps = fix.plan_services(good_snapshot(), CFG, None,
                             kw_mod.Analysis(keywords=[], coverage=[]))
 check("no gaps means no services fix", no_gaps is None)
+
+# From the first live run: the model answered with arrows instead of pipes,
+# nothing parsed, and the tool reported "nothing to fix" on a profile that had
+# a real gap. Both halves of that are now covered.
+for _sep, _label in [("|", "pipe"), ("→", "arrow"), ("->", "ascii arrow"),
+                     ("—", "em dash"), (":", "colon")]:
+    def _stub(prompt, *, system="", cfg=None, model=None, retries=2, _s=_sep):
+        return "\n".join(
+            f"Service {i} {_s} A description of the work, what it covers and "
+            f"who it is for." for i in range(1, 4))
+    llm.generate = _stub
+    _f = fix.plan_services(kw_snap, CFG, None, kw_analysis)
+    check(f"a {_label} separator is parsed", _f is not None
+          and len(_f.body["serviceItems"]) >= 1,
+          "returned None" if _f is None else "")
+
+# THE LIVE BUG, and it had two halves.
+#
+# 1. `claude -p` is a full agent, not a text completion. With tools it can read
+#    the working directory and act on what it finds.
+# 2. Worse, and the actual cause: when gbp-autopilot is run from inside a
+#    Claude Code session, the parent exports CLAUDE_CODE_SESSION_ID, a
+#    CLAUDE_CODE_MESSAGING_SOCKET and friends. The nested `claude -p` picks
+#    them up, JOINS the parent session, and answers the operator's
+#    conversation instead of the prompt it was given. The planner was handed
+#    back a markdown status report about this repo and split it on colons.
+#
+# Fixed in three places: the CLI runs with --tools "", it runs with the session
+# environment stripped and from a neutral cwd, and nothing that fails to look
+# like a service gets through the parser.
+from gbp.fix import _reject_service  # noqa: E402
+from gbp.llm import _isolated_env, _SESSION_ENV  # noqa: E402
+
+_dirty = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "abc",
+          "CLAUDE_CODE_CHILD_SESSION": "1", "CLAUDE_CODE_MESSAGING_SOCKET": "/x",
+          "CLAUDE_CODE_MESSAGING_TOKEN": "t", "AI_AGENT": "claude",
+          "BAGGAGE": "x", "CLAUDE_PID": "9"}
+_keep = {"PATH": "/usr/bin", "HOME": "/home/x", "USERPROFILE": "C:/Users/x",
+         "APPDATA": "C:/x", "ANTHROPIC_API_KEY": "sk-x"}
+_before = dict(os.environ)
+os.environ.update(_dirty)
+os.environ.update(_keep)
+_clean_env = _isolated_env()
+
+for _var in _dirty:
+    check(f"session env stripped: {_var}", _var not in _clean_env)
+for _var in _keep:
+    check(f"kept for the CLI to work: {_var}", _clean_env.get(_var) == _keep[_var])
+check("the session pattern is anchored, not a substring match",
+      not _SESSION_ENV.match("MY_CLAUDE_SETTING"))
+check("stripping does not mutate the real environment",
+      "CLAUDE_CODE_SESSION_ID" in os.environ)
+os.environ.clear()
+os.environ.update(_before)
+
+import inspect  # noqa: E402
+_src = inspect.getsource(llm._via_cli)
+check("the CLI is invoked with no tools", '"--tools", ""' in _src)
+check("the CLI runs from a neutral cwd, not the project", "cwd=" in _src)
+check("the CLI runs with the isolated environment",
+      "env=_isolated_env()" in _src)
+
+# The one that took longest to find, because it did not look like a bug. A
+# multi-line prompt passed as a command-line ARGUMENT arrives truncated on
+# Windows: the CLI saw only the first line. A full services brief came back as
+# "Got it, Nour Solutions. What would you like me to do for it?" -- which reads
+# like the model being unhelpful, not like the prompt never arriving. Sending
+# the identical prompt on stdin returns the answer asked for.
+check("the prompt is sent on stdin", "input=prompt" in _src,
+      "a multi-line prompt in argv arrives truncated on Windows")
+check("the prompt is NOT passed as an argv",
+      '"-p", "--model"' in _src and '"-p", prompt' not in _src)
+# Check what is actually put in the command, not what the comments mention --
+# the comments explain why --append-system-prompt is wrong, so a plain
+# substring search finds it and fails on the explanation.
+_cmd_lines = [l for l in _src.splitlines()
+              if "cmd" in l and ("+=" in l or "= [exe" in l)]
+_cmd_src = "\n".join(_cmd_lines)
+check("the system prompt REPLACES the agent prompt",
+      "--system-prompt-file" in _cmd_src
+      and "--append-system-prompt" not in _cmd_src,
+      f"appending leaves the coding-agent persona in charge: {_cmd_src}")
+# The system prompt is multi-line too, so it hits the same argv truncation as
+# the user prompt. With only line one of SERVICES_SYSTEM the model returned a
+# bare name and none of the format or grounding rules that follow it.
+check("the system prompt goes in a file, not argv",
+      "--system-prompt-file" in _cmd_src and '"--system-prompt",' not in _cmd_src)
+check("no MCP servers are loaded", "--strict-mcp-config" in _src)
+check("no session is left behind in the operator's history",
+      "--no-session-persistence" in _src)
+
+check("the exact live failure is rejected",
+      bool(_reject_service("Audit", "90/100, 4 issues")),
+      _reject_service("Audit", "90/100, 4 issues"))
+check("a genuine service still passes",
+      not _reject_service(
+          "Boiler Repair",
+          "Diagnostic and repair for gas and combi boilers across Durham."))
+check("a service description containing standards still passes",
+      not _reject_service(
+          "ISO Certification Services",
+          "Support with ISO 9001, 14001 and 45001 certification for "
+          "companies in the Eastern Province."))
+for _n, _d, _why in [
+        ("X", "A description long enough to pass the length check here.",
+         "one-character name"),
+        ("Boiler Repair", "We fix boilers.", "one-line description"),
+        ("Audit complete", "Everything finished without any problems at all.",
+         "tool chatter"),
+        ("12/100", "A description long enough to pass the length check here.",
+         "a score as the name")]:
+    check(f"rejected: {_why}", bool(_reject_service(_n, _d)))
+
+
+def _garbage(prompt, *, system="", cfg=None, model=None, retries=2):
+    return "Audit | 90/100, 4 issues"
+
+
+llm.generate = _garbage
+try:
+    fix.plan_services(kw_snap, CFG, None, kw_analysis)
+    check("garbage never becomes a proposed service", False, "it was accepted")
+except llm.LLMError as exc:
+    check("garbage never becomes a proposed service", True)
+    check("and the rejection says why", "score" in str(exc).lower(), str(exc)[:80])
+
+
+def _unparseable(prompt, *, system="", cfg=None, model=None, retries=2):
+    return "Here are some thoughts about services but no structured lines."
+llm.generate = _unparseable
+try:
+    fix.plan_services(kw_snap, CFG, None, kw_analysis)
+    check("unreadable model output is reported, not swallowed", False,
+          "returned quietly")
+except llm.LLMError as exc:
+    check("unreadable model output is reported, not swallowed", True)
+    check("the error shows what came back", "thoughts" in str(exc))
 
 llm.generate = stub_generate
 

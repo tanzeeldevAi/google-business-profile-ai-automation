@@ -219,9 +219,12 @@ SERVICES_SYSTEM = """You name services for a Google Business Profile.
 You are given search terms real customers typed to find this business, grouped
 by the job they describe, plus the business's own website copy.
 
-For each group, output ONE line:
+For each group, output ONE line in EXACTLY this format, using a pipe:
 
     Service name | description
+
+The pipe character is required. Do not use an arrow, a dash, a colon or a
+numbered list. One line per group, nothing before or after them.
 
 Rules:
 - The service NAME is what a customer would call the job, in title case, under
@@ -234,6 +237,40 @@ Rules:
   no numbers unless they appear in the copy.
 - No marketing language, no superlatives, no "we are proud to".
 - One line per group, same order as given, nothing else in your output."""
+
+
+# Shapes that are never a service somebody sells. Checked because anything
+# accepted here gets written to a public profile as a promise to customers.
+_SCORE_LIKE = re.compile(r"^\s*\d+\s*(/|out of)\s*\d+")
+_TOOL_CHATTER = re.compile(
+    r"\b(issues?\s+found|score|/100|audit complete|passed|failed|error|"
+    r"traceback|exit code|tokens?|\bok\b)\b", re.I)
+
+
+def _reject_service(name: str, desc: str) -> str:
+    """Why this proposal must not go on a profile, or "" if it is fine.
+
+    The model is asked for "name | description" and is normally well behaved.
+    This exists for when it is not: on the first live run the CLI returned its
+    own status line, and without this the tool would have proposed a service
+    called "Audit" described as "90/100, 4 issues". A parser that accepts
+    anything with a separator in it is not a parser.
+    """
+    if len(name) < 3 or len(name) > MAX_SERVICE_NAME:
+        return f"name is {len(name)} characters"
+    if len(name.split()) > 8:
+        return "name is too long to be a service"
+    if not re.search(r"[A-Za-z]{3}", name):
+        return "name has no real words"
+    if _SCORE_LIKE.match(name) or _SCORE_LIKE.match(desc):
+        return "looks like a score, not a service"
+    if _TOOL_CHATTER.search(name):
+        return "looks like tool output, not a service"
+    if len(desc) < 40:
+        return f"description is only {len(desc)} characters"
+    if len(desc.split()) < 6:
+        return "description is not a sentence"
+    return ""
 
 
 def _service_body(name: str, description: str, category_id: str,
@@ -308,13 +345,46 @@ def plan_services(snap: Snapshot, cfg: dict,
 
     raw = llm.generate(prompt, system=SERVICES_SYSTEM, cfg=cfg.get("llm", {}))
 
+    # The prompt asks for "name | description". A model will cheerfully use an
+    # arrow, an em-dash or a colon instead, and on the first live run it did:
+    # every line came back separated by "->", nothing parsed, and the tool
+    # reported "nothing to fix" on a profile that had a real gap. Accept the
+    # separators a model actually reaches for.
+    SEPARATORS = ("|", "→", "->", "—", " – ", " - ", ":")
+
+    def split_line(line: str) -> tuple[str, str]:
+        for sep in SEPARATORS:
+            if sep in line:
+                left, _, right = line.partition(sep)
+                return left.strip(), right.strip()
+        return "", ""
+
+    candidates = []
+    for line in raw.splitlines():
+        name, desc = split_line(line)
+        if name and desc:
+            candidates.append((name, desc))
+
+    if not candidates:
+        # Do NOT return None here. None means "nothing to fix", and this is
+        # "the model answered in a shape we could not read" -- a very different
+        # thing to report to somebody auditing a client profile.
+        raise llm.LLMError(
+            "The services planner could not read the model's answer.\n"
+            "  It was asked for 'name | description' per line and returned "
+            "something else.\n  First 200 characters:\n    "
+            + raw[:200].replace("\n", " "))
+
     proposed: list[tuple[str, str, dict]] = []
-    for line, group in zip(
-            [l for l in raw.splitlines() if "|" in l], groups):
-        name, _, desc = line.partition("|")
+    rejected: list[str] = []
+    for (name, desc), group in zip(candidates, groups):
         name = re.sub(r"^\s*\d+[.)]\s*", "", name).strip()
         desc = desc.strip()
         if not name:
+            continue
+        why = _reject_service(name, desc)
+        if why:
+            rejected.append(f"{name[:40]!r} / {desc[:40]!r} -- {why}")
             continue
         # A number the website does not contain must not go on the profile.
         sources = (site_data.all_text if site_data and site_data.ok else "") + \
@@ -326,6 +396,10 @@ def plan_services(snap: Snapshot, cfg: dict,
         proposed.append((name, desc, group))
 
     if not proposed:
+        if rejected:
+            raise llm.LLMError(
+                "Every service the model proposed was rejected as not looking "
+                "like a service:\n    " + "\n    ".join(rejected))
         return None
 
     items = list(existing) + [
@@ -336,6 +410,9 @@ def plan_services(snap: Snapshot, cfg: dict,
 
     notes = [f"{len(proposed)} service(s) proposed from search terms the "
              f"profile does not mention:"]
+    if rejected:
+        notes.append(f"  ({len(rejected)} rejected as not looking like a "
+                     f"service: {rejected[0][:70]})")
     for name, desc, group in proposed:
         terms = ", ".join(k.term for k in group["terms"][:4])
         notes.append(f"  {name}")

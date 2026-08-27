@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from . import site
+
 SEVERITY_POINTS = {"critical": 20, "high": 10, "medium": 5, "low": 2}
 
 # Which command actually handles each auto-fixable finding. The audit says
@@ -577,7 +579,12 @@ def ct3_description_no_links(s: Snapshot, cfg: dict) -> Finding:
     bad: list[str] = []
     if re.search(r"https?://|www\.", desc, re.I):
         bad.append("a URL")
-    if re.search(r"\b[\d\s().+-]{9,}\b", desc) and re.search(r"\d{5,}", desc):
+    # Use the hardened extractor rather than a loose digit-run pattern. The
+    # loose one flagged a real client description that listed ISO 9001, 14001,
+    # 45001, 27001 and 22000: "22000." at the end of a paragraph, followed by
+    # two newlines, matched "nine or more digits and spaces". Telling a client
+    # to strip a phone number that is not there is worse than missing one.
+    if site.extract_phones(desc):
         bad.append("what looks like a phone number")
     offers = [w for w in ("% off", "discount", "sale", "free quote", "offer",
                           "call now", "book now") if w in desc.lower()]

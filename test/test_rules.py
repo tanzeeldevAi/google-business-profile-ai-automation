@@ -72,6 +72,42 @@ empty.location["profile"] = {"description": ""}
 check("CT1 fails when there is no description",
       not by_id(rules.run_all(empty, {}))["CT1"].passed)
 
+print("\n== CT3 does not mistake standards for a phone number ==")
+# From a live client audit: a description listing ISO 9001, 14001, 45001,
+# 27001 and 22000 was reported as containing a phone number. "22000." at the
+# end of a paragraph, followed by two newlines, matched a loose "nine or more
+# digits and spaces" pattern. Telling a client to strip a number that is not
+# there is worse than missing one.
+iso_desc = good_snapshot()
+iso_desc.location["profile"] = {"description": (
+    "Nour Solutions is a business and technology consultancy based in Al "
+    "Khobar, serving companies across the Eastern Province.\n\n"
+    "We provide ISO certification support across ISO 9001, ISO 14001, "
+    "ISO 45001, ISO 27001 and ISO 22000.\n\n"
+    "Based in Al Khobar, working with businesses across Saudi Arabia.")}
+iso_f = by_id(rules.run_all(iso_desc, {}))
+check("a description listing ISO standards is not flagged as a phone number",
+      iso_f["CT3"].passed, iso_f["CT3"].detail)
+
+for _text, _label in [
+        ("Call us on 0191 555 0142 for a quote.", "a UK number"),
+        ("Reach us at +44 191 555 0142 any time.", "an international number"),
+]:
+    _s = good_snapshot()
+    _s.location["profile"] = {"description": _text}
+    check(f"a real phone number IS still caught ({_label})",
+          not by_id(rules.run_all(_s, {}))["CT3"].passed)
+
+for _text, _label in [
+        ("Trading since 1998 across 3 counties.", "a year and a small number"),
+        ("We hold ISO 9001 and ISO 27001.", "two standards"),
+        ("Open 9 to 5, Monday to Friday.", "opening times"),
+]:
+    _s = good_snapshot()
+    _s.location["profile"] = {"description": _text}
+    check(f"not flagged: {_label}",
+          by_id(rules.run_all(_s, {}))["CT3"].passed)
+
 print("\n== the depth rules (services, replies, posts, media, social) ==")
 # These judge QUALITY, not presence, so each needs its own before/after rather
 # than the blanket pairing above.

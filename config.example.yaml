@@ -115,7 +115,9 @@ website:
 llm:
   backend: claude
   model: sonnet            # for backend: api use a full id, e.g. claude-sonnet-5
-  timeout_seconds: 120
+  # The services planner sends the search terms plus the website copy, which is
+  # a big prompt. 120s was not enough for it on a real profile; 300 is.
+  timeout_seconds: 300
 
 
 # -----------------------------------------------------------------------------
