@@ -22,8 +22,8 @@ import traceback
 from datetime import datetime, timezone
 
 from gbp import (api, audit as audit_mod, auth, config, db, fix as fix_mod,
-                 holidays, images, llm, posts, report, reviews, site as site_mod,
-                 watch)
+                 holidays, images, keywords as kw_mod, llm, posts, report,
+                 reviews, site as site_mod, watch)
 from gbp.api import ApiError, Client, split_location_id
 from gbp.auth import AuthError
 
@@ -92,10 +92,10 @@ def _snapshot(client: Client, cfg: dict, args, *, verbose: bool = True,
     account, location = _resolve(client, cfg, args)
     if verbose:
         print(f"\n  Reading {location}\n")
-    snap, skipped, site_data = audit_mod.fetch_snapshot(
+    snap, skipped, site_data, analysis = audit_mod.fetch_snapshot(
         client, account, location, verbose=verbose, cfg=cfg,
         fetch_site=fetch_site)
-    return account, location, snap, skipped, site_data
+    return account, location, snap, skipped, site_data, analysis
 
 
 # ------------------------------------------------------------------- commands
@@ -200,7 +200,8 @@ def cmd_audit(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data, analysis = _snapshot(
+        client, cfg, args)
 
     result = audit_mod.audit(snap, cfg, skipped)
     audit_mod.print_summary(result)
@@ -221,11 +222,13 @@ def cmd_fix(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data, analysis = _snapshot(
+        client, cfg, args)
 
     result = audit_mod.audit(snap, cfg, skipped)
     only = args.only.split(",") if args.only else None
-    fixes = fix_mod.plan(result, snap, cfg, only=only, site_data=site_data)
+    fixes = fix_mod.plan(result, snap, cfg, only=only, site_data=site_data,
+                         analysis=analysis)
     fix_mod.show(fixes)
     if fixes:
         fix_mod.apply(fixes, client, location, dry_run=not args.apply)
@@ -259,16 +262,56 @@ def cmd_post(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, _sk, site_data = _snapshot(
+    account, location, snap, _sk, site_data, analysis = _snapshot(
         client, cfg, args, verbose=False)
 
     draft = posts.plan(snap, location, cfg, topic=args.topic,
                        with_image=not args.no_image, site_data=site_data,
-                       url=args.url)
+                       url=args.url, analysis=analysis)
     posts.show(draft)
     posts.apply(draft, client, account, location, split_location_id(location),
                 dry_run=not args.apply, force=args.force,
                 language=cfg.get("posts", {}).get("language", "en"))
+    return 0
+
+
+def cmd_keywords(args) -> int:
+    """What people typed to find this profile, and whether it says those words.
+
+    This is the Performance tab's search-terms list, pulled through the API and
+    cross-referenced against everything on the profile. The terms with NOWHERE
+    against them are the work.
+    """
+    cfg = config.load(args.config)
+    db.init()
+    client = _client(cfg)
+    _account, _location, _snap, _sk, _site, analysis = _snapshot(
+        client, cfg, args, verbose=not args.quiet)
+
+    if analysis is None:
+        print("\n  No search-term data came back.\n"
+              "  Either the Performance API is not approved for this project "
+              "yet, or\n  the profile is too new -- Google needs a few months "
+              "of activity, and the\n  current month is never included.\n")
+        return 1
+
+    keywords_mod = kw_mod
+    keywords_mod.show(analysis, limit=args.limit)
+
+    if args.csv:
+        import csv
+        path = config.REPORT_DIR / f"search-terms-{_snap.title[:30]}.csv"
+        config.ensure_dirs()
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["search term", "times shown", "exact count",
+                        "brand search", "where it appears on the profile"])
+            for c in analysis.coverage:
+                w.writerow([c.keyword.term, c.keyword.impressions,
+                            "yes" if c.keyword.exact else "no (threshold)",
+                            "yes" if c.is_brand else "no",
+                            ", ".join(c.places) or "NOWHERE"])
+        print(f"  Full list: {path}\n")
     return 0
 
 
@@ -302,7 +345,7 @@ def cmd_watch(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, _sk, site_data = _snapshot(
+    account, location, snap, _sk, site_data, analysis = _snapshot(
         client, cfg, args, verbose=False)
 
     first = db.last_snapshot(location) is None
@@ -316,7 +359,8 @@ def cmd_daily(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg, interactive=False)
-    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data, analysis = _snapshot(
+        client, cfg, args)
     location_id = split_location_id(location)
 
     print("\n== 1. what changed ==")
@@ -346,7 +390,7 @@ def cmd_daily(args) -> int:
         print("\n== 4. post ==")
         try:
             draft = posts.plan(snap, location, cfg, with_image=not args.no_image,
-                               site_data=site_data)
+                               site_data=site_data, analysis=analysis)
             posts.show(draft)
             posts.apply(draft, client, account, location, location_id,
                         dry_run=not args.apply)
@@ -443,7 +487,7 @@ def main() -> int:
     p.add_argument("--no-report", action="store_true", help="skip the HTML file")
 
     p = add("fix", cmd_fix, "apply the automatic fixes", apply_flag=True)
-    p.add_argument("--only", help="comma-separated: description,holiday_hours")
+    p.add_argument("--only", help="comma-separated: description,holiday_hours,services")
 
     p = add("reviews", cmd_reviews, "reply to unanswered reviews", apply_flag=True)
     p.add_argument("--include-held", action="store_true",
@@ -456,6 +500,16 @@ def main() -> int:
     p.add_argument("--force", action="store_true",
                    help="publish even if the post could not be kept inside "
                         "its source page")
+
+    p = sub.add_parser("keywords",
+                       help="what people typed to find this profile")
+    p.set_defaults(func=cmd_keywords)
+    p.add_argument("--location", help="locations/12345, or its number")
+    p.add_argument("--limit", type=int, default=25,
+                   help="how many terms to print (default 25)")
+    p.add_argument("--csv", action="store_true",
+                   help="also write the full list to reports/")
+    p.add_argument("--quiet", action="store_true", help="skip the fetch log")
 
     p = sub.add_parser("site", help="show what was read from the website")
     p.set_defaults(func=cmd_site)

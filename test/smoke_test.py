@@ -176,6 +176,92 @@ check("apply writes each fix", sent == len(fixes) and len(fc.patches) == len(fix
 check("applied fixes are recorded", db.already_done(LOC, "fix", "description"))
 
 print("\n" + "=" * 68)
+print("4b. SERVICES FROM SEARCH TERMS")
+
+from gbp import keywords as kw_mod  # noqa: E402
+from gbp import site as site_mod_early  # noqa: E402
+
+KW_RAW = [
+    {"searchKeyword": "boiler repair durham", "insightsValue": {"value": "175"}},
+    {"searchKeyword": "emergency boiler repair",
+     "insightsValue": {"threshold": "15"}},
+    {"searchKeyword": "power flush durham", "insightsValue": {"value": "60"}},
+    {"searchKeyword": "opening hours", "insightsValue": {"threshold": "15"}},
+]
+kw_snap = good_snapshot()
+kw_snap.location["serviceItems"] = []
+kw_snap.location["profile"] = {"description": "We are a plumbing company."}
+kw_analysis = kw_mod.analyse(kw_mod.parse(KW_RAW), kw_snap)
+kw_snap.keywords = kw_mod.to_snapshot_dict(kw_analysis)
+
+check("search terms produce gaps", len(kw_analysis.gaps) >= 2,
+      str([c.keyword.term for c in kw_analysis.gaps]))
+
+
+def stub_services(prompt, *, system="", cfg=None, model=None, retries=2):
+    # One line per group, in the format the planner parses.
+    return ("Boiler Repair | Diagnostic and repair for gas and combi boilers, "
+            "covering Durham and the surrounding area.\n"
+            "Power Flushing | Clearing sludge from a central heating system so "
+            "radiators heat evenly again.\n"
+            "Underfloor Heating | Installation and repair of underfloor "
+            "heating for homes.")
+
+
+llm.generate = stub_services
+kw_result = audit(kw_snap, CFG)
+svc_fixes = fix.plan(kw_result, kw_snap, CFG, only=["services"],
+                     analysis=kw_analysis)
+check("a services fix is planned", len(svc_fixes) == 1,
+      str([f.key for f in svc_fixes]))
+
+svc = svc_fixes[0]
+check("services fix writes serviceItems", svc.update_mask == "serviceItems")
+items = svc.body["serviceItems"]
+check("services are proposed", len(items) >= 2, str(len(items)))
+first = items[0]["freeFormServiceItem"]
+check("each service has a category", bool(first.get("category")),
+      str(first.get("category")))
+check("each service has a display name", bool(first["label"]["displayName"]))
+check("each service has a description", bool(first["label"]["description"]))
+check("names are within Google's limit",
+      all(len(i["freeFormServiceItem"]["label"]["displayName"]) <= 120
+          for i in items))
+check("descriptions are within Google's limit",
+      all(len(i["freeFormServiceItem"]["label"]["description"]) <= 300
+          for i in items))
+check("the numbered prefix is stripped from the name",
+      not first["label"]["displayName"][0].isdigit(),
+      first["label"]["displayName"])
+check("the fix shows which search terms justified each service",
+      any("from:" in n for n in svc.notes), str(svc.notes[:4]))
+check("the fix warns that a search term is not a promise",
+      any("promise" in n for n in svc.notes))
+check("'opening hours' is never proposed as a service",
+      not any("opening hour" in
+              i["freeFormServiceItem"]["label"]["displayName"].lower()
+              for i in items))
+
+existing_snap = good_snapshot()
+existing_snap.location["serviceItems"] = [
+    {"freeFormServiceItem": {"label": {"displayName": "Existing service",
+                                       "description": "Already here."}}}]
+existing_snap.keywords = kw_snap.keywords
+svc2 = fix.plan(audit(existing_snap, CFG), existing_snap, CFG,
+                only=["services"], analysis=kw_analysis)
+check("existing services are preserved, not replaced",
+      any(i.get("freeFormServiceItem", {}).get("label", {})
+          .get("displayName") == "Existing service"
+          for i in svc2[0].body["serviceItems"]) if svc2 else False,
+      "no fix planned" if not svc2 else "")
+
+no_gaps = fix.plan_services(good_snapshot(), CFG, None,
+                            kw_mod.Analysis(keywords=[], coverage=[]))
+check("no gaps means no services fix", no_gaps is None)
+
+llm.generate = stub_generate
+
+print("\n" + "=" * 68)
 print("5. REVIEWS")
 review_set = [
     {"name": "reviews/r1", "starRating": "FIVE", "comment": "Fixed my boiler fast.",

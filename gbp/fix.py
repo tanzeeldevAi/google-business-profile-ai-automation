@@ -17,11 +17,12 @@ judgement about the business.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from . import db, holidays, llm, site
+from . import db, holidays, keywords, llm, site
 from .api import Client
 from .audit import AuditResult
 from .rules import Snapshot
@@ -207,17 +208,169 @@ def plan_holiday_hours(snap: Snapshot, cfg: dict,
     )
 
 
+# -------------------------------------------------------------------- services
+
+# Google's limits on a free-form service item.
+MAX_SERVICE_NAME = 120
+MAX_SERVICE_DESC = 300
+
+SERVICES_SYSTEM = """You name services for a Google Business Profile.
+
+You are given search terms real customers typed to find this business, grouped
+by the job they describe, plus the business's own website copy.
+
+For each group, output ONE line:
+
+    Service name | description
+
+Rules:
+- The service NAME is what a customer would call the job, in title case, under
+  8 words. Use the customer's own words from the search terms, not jargon.
+- The DESCRIPTION is 2 to 3 plain sentences, under 300 characters. Say what
+  the job covers, roughly how it works, and who it is for. Use the search
+  phrasing naturally inside it, without repeating it word for word.
+- Take every factual detail from the website copy provided. If the website
+  does not say it, do not claim it. No prices, no timeframes, no guarantees,
+  no numbers unless they appear in the copy.
+- No marketing language, no superlatives, no "we are proud to".
+- One line per group, same order as given, nothing else in your output."""
+
+
+def _service_body(name: str, description: str, category_id: str,
+                  language: str = "en") -> dict:
+    item: dict[str, Any] = {
+        "freeFormServiceItem": {
+            "category": category_id,
+            "label": {
+                "displayName": name[:MAX_SERVICE_NAME],
+                "description": description[:MAX_SERVICE_DESC],
+                "languageCode": language,
+            },
+        }
+    }
+    return item
+
+
+def plan_services(snap: Snapshot, cfg: dict,
+                  site_data: "site.Site | None" = None,
+                  analysis: "keywords.Analysis | None" = None) -> Fix | None:
+    """Turn the search terms the profile ignores into named services.
+
+    This is the highest-leverage thing in the tool. Google reports the exact
+    words customers used; most profiles never say those words anywhere. Adding
+    them as services with real descriptions puts the customer's own language
+    back on the page they land on.
+
+    It proposes, it does not decide. Every service is shown with the search
+    terms that justified it, because a search term is evidence of demand, not
+    proof the business offers the thing.
+    """
+    if analysis is None or not analysis.gaps:
+        return None
+
+    category_id = snap.primary_category.get("name", "")
+    if not category_id:
+        return None
+
+    scfg = cfg.get("services", {}) or {}
+    max_new = int(scfg.get("max_new", 6))
+
+    groups = [g for g in keywords.cluster(analysis.gaps,
+                                          max_groups=max_new * 2,
+                                          drop=analysis.drop_stems)
+              if keywords.worth_a_service(g)][:max_new]
+    if not groups:
+        return None
+
+    site_block = (site.business_block(site_data, max_chars=1500)
+                  if site_data and site_data.ok else "")
+    existing = snap.location.get("serviceItems", []) or []
+    existing_names = []
+    for item in existing:
+        label = (item.get("freeFormServiceItem", {}).get("label", {}) or {})
+        if label.get("displayName"):
+            existing_names.append(label["displayName"])
+
+    lines = []
+    for i, g in enumerate(groups, 1):
+        terms = ", ".join(f'"{k.term}" ({k.label})' for k in g["terms"][:6])
+        lines.append(f"{i}. {terms}")
+
+    prompt = (
+        f"Business: {snap.title}\n"
+        f"Category: {snap.primary_category.get('displayName', '')}\n"
+        f"City: {snap.locality}\n"
+        f"Services already listed: {', '.join(existing_names) or 'none'}\n\n"
+        f"Search term groups to name as services:\n" + "\n".join(lines)
+        + (f"\n\nThe business's own website:\n{site_block}" if site_block else "")
+        + f"\n\nOutput exactly {len(groups)} lines, one per group."
+    )
+
+    raw = llm.generate(prompt, system=SERVICES_SYSTEM, cfg=cfg.get("llm", {}))
+
+    proposed: list[tuple[str, str, dict]] = []
+    for line, group in zip(
+            [l for l in raw.splitlines() if "|" in l], groups):
+        name, _, desc = line.partition("|")
+        name = re.sub(r"^\s*\d+[.)]\s*", "", name).strip()
+        desc = desc.strip()
+        if not name:
+            continue
+        # A number the website does not contain must not go on the profile.
+        sources = (site_data.all_text if site_data and site_data.ok else "") + \
+            " ".join(cfg.get("business", {}).get("facts", []) or [])
+        bad = site.unverified_numbers(desc, sources) if sources.strip() else []
+        if bad:
+            desc = re.sub(r"[^.]*\b(" + "|".join(re.escape(b) for b in bad)
+                          + r")\b[^.]*\.", "", desc).strip()
+        proposed.append((name, desc, group))
+
+    if not proposed:
+        return None
+
+    items = list(existing) + [
+        _service_body(n, d, category_id,
+                      cfg.get("posts", {}).get("language", "en"))
+        for n, d, _g in proposed
+    ]
+
+    notes = [f"{len(proposed)} service(s) proposed from search terms the "
+             f"profile does not mention:"]
+    for name, desc, group in proposed:
+        terms = ", ".join(k.term for k in group["terms"][:4])
+        notes.append(f"  {name}")
+        notes.append(f"      from: {terms}")
+        notes.append(f"      {desc[:150]}")
+    notes.append("")
+    notes.append("A search term proves people looked for it. It does NOT prove "
+                 "this business")
+    notes.append("offers it. Read every line and remove anything they do not "
+                 "actually do")
+    notes.append("before applying -- a service on a profile is a promise.")
+
+    return Fix(
+        key="services", title="Services from search terms",
+        before=f"{len(existing)} service(s) listed",
+        after=f"{len(items)} service(s) listed",
+        update_mask="serviceItems",
+        body={"serviceItems": items},
+        notes=notes,
+    )
+
+
 # ------------------------------------------------------------------- the driver
 
 PLANNERS = {
     "description": plan_description,
     "holiday_hours": plan_holiday_hours,
+    "services": plan_services,
 }
 
 
 def plan(result: AuditResult, snap: Snapshot, cfg: dict,
          only: list[str] | None = None,
-         site_data: "site.Site | None" = None) -> list[Fix]:
+         site_data: "site.Site | None" = None,
+         analysis: "keywords.Analysis | None" = None) -> list[Fix]:
     """Build a fix for each failing rule that declares itself auto-fixable."""
     wanted: list[str] = []
     for f in result.failures:
@@ -229,7 +382,11 @@ def plan(result: AuditResult, snap: Snapshot, cfg: dict,
     fixes: list[Fix] = []
     for key in wanted:
         try:
-            fix = PLANNERS[key](snap, cfg, site_data)
+            planner = PLANNERS[key]
+            if key == "services":
+                fix = planner(snap, cfg, site_data, analysis)
+            else:
+                fix = planner(snap, cfg, site_data)
         except llm.LLMError as exc:
             print(f"  ! could not plan '{key}': {exc}")
             continue

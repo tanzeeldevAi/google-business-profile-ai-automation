@@ -38,6 +38,7 @@ SEVERITY_POINTS = {"critical": 20, "high": 10, "medium": 5, "low": 2}
 HANDLED_BY = {
     "description": "run.py fix",
     "holiday_hours": "run.py fix",
+    "services": "run.py fix",
     "reviews": "run.py reviews",
     "posts": "run.py post",
 }
@@ -53,6 +54,7 @@ CATEGORY_LABELS = {
     "posts": "Google Posts",
     "qanda": "Questions and answers",
     "website": "Website",
+    "keywords": "Search terms",
     "performance": "Performance",
 }
 
@@ -103,12 +105,15 @@ class Snapshot:
     # A flat summary of the business's own website, from site.py. Kept as a
     # plain dict so a Snapshot stays JSON-shaped and easy to build in a test.
     site: dict[str, Any] = field(default_factory=dict)
+    # Summary of the search terms Google reports for this profile, from
+    # keywords.py. Flat for the same reason as `site`.
+    keywords: dict[str, Any] = field(default_factory=dict)
     # Which sections we could actually fetch. A section we could not read is
     # reported as unknown, never as a failure -- telling a client their photos
     # are missing when we simply could not look would be worse than useless.
     available: set[str] = field(default_factory=lambda: {
         "location", "reviews", "posts", "media", "questions", "performance",
-        "place_actions", "site"})
+        "place_actions", "site", "keywords"})
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # ---------------------------------------------------------- small helpers
@@ -1042,6 +1047,77 @@ def w3_local_schema(s: Snapshot, cfg: dict) -> Finding:
         fix="Add LocalBusiness JSON-LD to the home page with the same name, "
             "address, phone, hours and URL as the Google profile. The details "
             "must match the profile exactly, or it works against you.",
+    )
+
+
+# ============================================================= search keywords
+
+@rule
+def kw1_terms_available(s: Snapshot, cfg: dict) -> Finding:
+    if "keywords" not in s.available:
+        return _unknown("KW1", "Search terms people used", "keywords",
+                        "search keyword")
+    k = s.keywords
+    total = int(k.get("total") or 0)
+    return Finding(
+        "KW1", "Search terms people used", "low", "keywords", True,
+        informational=True,
+        detail=(f"{total} search term(s) over {k.get('months', 'the period')}, "
+                f"{int(k.get('impressions') or 0):,} impressions. "
+                f"{int(k.get('discovery') or 0)} are not brand searches."),
+        why="", fix="",
+    )
+
+
+@rule
+def kw2_coverage(s: Snapshot, cfg: dict) -> Finding:
+    if "keywords" not in s.available:
+        return _unknown("KW2", "Profile uses the words people search for",
+                        "keywords", "search keyword")
+    k = s.keywords
+    disc = int(k.get("discovery") or 0)
+    if disc < int(cfg.get("min_keywords_to_judge", 5)):
+        return _unknown("KW2", "Profile uses the words people search for",
+                        "keywords", "enough search keyword")
+    rate = float(k.get("covered_rate") or 0.0)
+    want = float(cfg.get("min_keyword_coverage", 0.6))
+    ok = rate >= want
+    gaps = int(k.get("gap_count") or 0)
+    return Finding(
+        "KW2", "Profile uses the words people search for", "high", "keywords",
+        ok,
+        detail=(f"{rate:.0%} of the {disc} non-brand search terms appear "
+                f"somewhere on the profile. {gaps} appear nowhere."),
+        why="Google is telling you the exact words customers type to find you. "
+            "A term you rank for but never mention is a term you rank for by "
+            "accident, and a competitor who does mention it will take it. "
+            "Putting those words back into the services and posts is the "
+            "cheapest relevance you will ever buy.",
+        fix="Add the missing terms to the Services section, each with a real "
+            "description, and use them in posts. This tool can draft the "
+            "services from the search data -- see `python run.py keywords`.",
+        fixable=True, fix_key="services",
+    )
+
+
+@rule
+def kw3_top_term_missing(s: Snapshot, cfg: dict) -> Finding:
+    if "keywords" not in s.available:
+        return _unknown("KW3", "Biggest search terms are covered", "keywords",
+                        "search keyword")
+    top = s.keywords.get("top_gap")
+    ok = not top
+    return Finding(
+        "KW3", "Biggest search terms are covered", "high", "keywords", ok,
+        detail=("Every high-volume term is reflected somewhere." if ok else
+                f"\"{top.get('term')}\" showed the profile "
+                f"{top.get('label')} times and appears nowhere on it."),
+        why="The highest-volume term you are found for is the one worth "
+            "defending. If the profile never says those words, the ranking "
+            "rests on Google's inference rather than on anything you control.",
+        fix="Add it as a named service with a description that uses the phrase "
+            "naturally, and write a post about it.",
+        fixable=True, fix_key="services",
     )
 
 

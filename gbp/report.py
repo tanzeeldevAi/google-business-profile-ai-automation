@@ -119,6 +119,60 @@ def _finding_html(f) -> str:
     </div>"""
 
 
+MISSING_CELL = ('<span style="color:#B3261E;font-weight:600">'
+                'not on the profile</span>')
+
+
+def _keywords_html(kw: dict) -> str:
+    """The search terms section.
+
+    Usually the part a business owner reacts to, because it is their own
+    customers' words rather than an opinion about their profile.
+    """
+    if not kw or not kw.get("total"):
+        return ""
+
+    rows = []
+    for term in (kw.get("top_terms") or [])[:15]:
+        places = term.get("places") or []
+        where = _e(", ".join(places)) if places else MISSING_CELL
+        rows.append(f"<tr><td>{_e(term['term'])}</td>"
+                    f"<td class='pct'>{_e(term['label'])}</td>"
+                    f"<td>{where}</td></tr>")
+
+    head = (f"<h3>What people typed to find this business</h3>"
+            f'<p style="color:#4B5563;margin:0 0 14px;font-size:15px">'
+            f"Google reports {kw['total']} search term(s) over "
+            f"{_e(kw.get('months', 'the period'))}, showing the profile "
+            f"{kw.get('impressions', 0):,} times. "
+            f"{kw.get('discovery', 0)} of those are not searches for the "
+            f"business by name.</p>"
+            f'<table class="cats">'
+            f"<tr><td><b>Search term</b></td>"
+            f'<td class="pct"><b>Shown</b></td>'
+            f"<td><b>Where it appears on the profile</b></td></tr>"
+            + "".join(rows) + "</table>")
+
+    gaps = kw.get("gaps") or []
+    if not gaps:
+        return head
+
+    gap_list = "".join(f"<li>{_e(g['term'])} <b>({_e(g['label'])})</b></li>"
+                       for g in gaps[:12])
+    callout = (
+        '<div class="note" style="background:#FEE2E2;border-color:#FCA5A5;'
+        'color:#7F1D1D">'
+        f"<b>{kw.get('gap_count', 0)} of these terms appear nowhere on the "
+        f"profile</b>, between them worth "
+        f"{kw.get('missed_impressions', 0):,} impressions. Google is already "
+        f"showing this business for words it never says:"
+        f'<ul style="margin:8px 0 0;padding-left:20px">{gap_list}</ul>'
+        '<p style="margin:10px 0 0">Each of these should be a named service '
+        "with a real description, and should appear in the ongoing posts.</p>"
+        "</div>")
+    return head + callout
+
+
 def build(result: AuditResult, *, prepared_by: str = "",
           previous_score: int | None = None) -> str:
     loc = result.location
@@ -166,6 +220,12 @@ def build(result: AuditResult, *, prepared_by: str = "",
         items = "".join(f"<li>{_e(f.title)}</li>" for f in passed)
         passed_html = (f'<h3>Already correct ({len(passed)})</h3>'
                        f'<div class="ok"><ul>{items}</ul></div>')
+
+    # The search terms section. This is usually the part a business owner
+    # reacts to, because it is their own customers' words rather than an
+    # opinion about their profile.
+    kw = getattr(result, "keywords", None) or {}
+    kw_html = _keywords_html(kw)
 
     info_html = ""
     if result.informational:
@@ -230,6 +290,8 @@ def build(result: AuditResult, *, prepared_by: str = "",
 
 <h3>What to fix, worst first</h3>
 {findings_html}
+
+{kw_html}
 
 {passed_html}
 {info_html}

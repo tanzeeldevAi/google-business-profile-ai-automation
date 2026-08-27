@@ -2,7 +2,7 @@
 
 # GBP Autopilot — Audit, Fix and Run a Google Business Profile
 
-**Scores a Google Business Profile against 42 local SEO rules, writes a client-ready report,
+**Scores a Google Business Profile against 45 local SEO rules, writes a client-ready report,
 fixes what it can through the API, answers every review, posts weekly, sets holiday hours, and
 tells you the moment Google changes something behind your back.**
 
@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-293%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-384%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -47,7 +47,7 @@ and after first.
 
 ## What it checks
 
-42 rules across eleven areas, each weighted by what it actually costs you:
+45 rules across twelve areas, each weighted by what it actually costs you:
 
 | | |
 |---|---|
@@ -61,6 +61,7 @@ and after first.
 | 📣 **Posts** | Posted in the last 7 days, posting regularly, every post has a button |
 | ❓ **Q&A** | Nothing unanswered, common questions seeded by the owner |
 | 🌐 **Website** | Reachable, the profile's phone actually appears on it, LocalBusiness schema present |
+| 🔎 **Search terms** | The words people actually typed to find the profile, and whether the profile says any of them |
 | 📈 **Performance** | 90 days of views and actions from Google's own data |
 
 Each finding says what was found, **why Google cares**, and **what to do about it**. That is what
@@ -76,10 +77,11 @@ makes the report worth sending to a prospect rather than just reading yourself.
 
 | Command | What it does |
 |---|---|
-| `run.py fix` | Rewrites the description to be compliant and complete; sets holiday hours for every upcoming public holiday |
+| `run.py fix` | Rewrites the description; sets holiday hours; **turns the search terms the profile ignores into named services** |
 | `run.py reviews` | Replies to unanswered reviews in the owner's voice. Low-star reviews are **held for a human** by default |
 | `run.py post` | Writes and publishes a Google Post, rotating through the services on the profile |
 | `run.py watch` | Fingerprints the profile and reports anything that changed since last time |
+| `run.py keywords` | The search terms Google reports, and which ones the profile never mentions |
 | `run.py site` | Shows what was read from the business's own website |
 
 **It never invents a fact.** The description and posts are built only from what is already on the
@@ -124,6 +126,9 @@ Google does not hand out Business Profile API access automatically. Budget a few
    - Business Profile Performance API
    - My Business Q&A API
    - My Business Place Actions API
+
+   > The Performance API is the one that carries the search terms. Without it
+   > you lose the single most useful part of the audit, so do not skip it.
 3. **Request access.** Fill in Google's
    [Business Profile APIs access form](https://developers.google.com/my-business/content/prereqs).
    Approval takes anywhere from a day to a couple of weeks.
@@ -154,12 +159,13 @@ writer may take claims from, so keep every line true and checkable.
 ### Step 4 — Prove it works before touching a live profile
 
 ```bash
-python test/test_rules.py     # 135 checks: every rule, on a good profile and a broken one
+python test/test_rules.py     # 138 checks: every rule, on a good profile and a broken one
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
-python test/smoke_test.py     #  95 checks: audit, report, fixes, reviews, posts, watcher
+python test/test_keywords.py  #  73 checks: search terms, coverage, clustering
+python test/smoke_test.py     # 110 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**293 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**384 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -207,6 +213,7 @@ python run.py post                # next service in the rotation, shown not sent
 python run.py post --url https://yoursite.com/services/boiler-repair/
 python run.py post --apply        # publish it
 
+python run.py keywords            # what people typed to find this profile
 python run.py site                # what was read from the website
 
 python run.py watch               # what changed since last time
@@ -220,6 +227,62 @@ python run.py daily --apply       # watch + audit + reviews, in order
 ```
 
 ---
+
+## The words people actually typed
+
+Google's Performance tab has a list called **"Searches showed your Business Profile in the search
+results"** — the exact phrases real customers used. It is the most valuable thing on the profile
+and almost nobody acts on it.
+
+This pulls the whole list through the API and does the obvious thing with it:
+
+```bash
+python run.py keywords
+python run.py keywords --csv     # full list to reports/, for a client
+```
+
+```
+  TERM                                            SHOWN   WHERE IT APPEARS
+  ----------------------------------------------------------------------------
+  plumber durham                                    820   categories, description
+  emergency plumber durham                          260   services
+  boiler repair durham                              175   NOWHERE
+  power flush durham                                <15   NOWHERE
+
+  Non-brand terms: 12   covered by the profile: 58%
+  5 term(s) appear nowhere on the profile, worth 1,375 impressions.
+```
+
+Every term is cross-referenced against the business name, categories, description, services,
+recent posts and the website. The ones marked **NOWHERE** are the work: Google is already showing
+this business for words the profile never says.
+
+Then turn them into services:
+
+```bash
+python run.py fix --only services              # see the proposals
+python run.py fix --only services --apply      # write them
+```
+
+It clusters the variants ("boiler repair", "boiler repair near me", "emergency boiler repair" are
+one service), names each one in the customer's own words, and writes a real description from the
+website copy. The same terms are fed to the post writer, so they get used on an ongoing basis too
+— the services list is the permanent half, posts are the ongoing half.
+
+> ⚠️ **Read every proposal before applying.** A search term proves people *looked* for something.
+> It does not prove this business *offers* it. A service on a public profile is a promise, and
+> "24 hour emergency callout" showing up in the search data does not mean they do one. The tool
+> shows you which search terms justified each proposal, and says this in the output every time.
+
+Three things it handles that a naive version gets wrong:
+
+- **Threshold counts.** Google returns an exact number for big terms and "fewer than 15" for the
+  rest. Most terms are the latter. They are kept and ranked below exact counts, because a
+  long-tail phrase with real intent is not worthless.
+- **Brand searches.** Searches for the business by name are separated out. A coverage score that
+  counts your own name is flattering and useless.
+- **The city.** "boiler repair durham" is covered by a service called "Boiler repair" on a profile
+  that is already in Durham. Demanding the city appear too would report gaps that are not real.
 
 ## Posting about specific services, from your own pages
 
@@ -404,7 +467,7 @@ run.py               the CLI
 gbp/
   auth.py            OAuth, token refresh, and the 7-day Testing-mode trap
   api.py             the Business Profile APIs, across all six hosts
-  rules.py           THE RULE SET. 42 local SEO rules, each with why and fix
+  rules.py           THE RULE SET. 45 local SEO rules, each with why and fix
   audit.py           fetches a snapshot, runs the rules, scores it
   report.py          the client-facing HTML report
   fix.py             applies what can be applied, dry-run first
@@ -412,11 +475,12 @@ gbp/
   posts.py           writing and publishing Google Posts
   images.py          post images, and where they may not go
   site.py            reads the business's own website, and the grounding guard
+  keywords.py        search terms, coverage analysis, clustering into services
   holidays.py        which holidays are coming, and which it refuses to guess
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                293 offline checks
+test/                384 offline checks
 ```
 
 ---

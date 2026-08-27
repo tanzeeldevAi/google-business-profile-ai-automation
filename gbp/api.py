@@ -314,6 +314,45 @@ class Client:
                f":fetchMultiDailyMetricsTimeSeries")
         return self._request_multi(url, params)
 
+    def search_keywords(self, location_id: str, start: date, end: date,
+                        max_pages: int = 20) -> list[dict]:
+        """The search terms people actually used to find this profile.
+
+        This is what the Performance tab calls "Searches showed your Business
+        Profile in the search results", and it is the single most useful thing
+        Google gives away: the exact words real customers typed.
+
+        Two quirks worth knowing:
+
+          * The range is MONTHLY, not daily, and Google allows at most the
+            last 12 months. The current month is usually not available yet.
+          * A term's count comes back as either `value` (an exact number) or
+            `threshold` (meaning "fewer than this"). Low-volume terms are
+            always thresholded for privacy, and there are a lot of them.
+        """
+        params: list[tuple[str, str]] = [
+            ("monthlyRange.start_month.year", str(start.year)),
+            ("monthlyRange.start_month.month", str(start.month)),
+            ("monthlyRange.end_month.year", str(end.year)),
+            ("monthlyRange.end_month.month", str(end.month)),
+            ("pageSize", "100"),
+        ]
+        url = (f"{HOSTS['performance']}/locations/{location_id}"
+               f"/searchkeywords/impressions/monthly")
+
+        out: list[dict] = []
+        token = ""
+        for _ in range(max_pages):
+            page_params = list(params)
+            if token:
+                page_params.append(("pageToken", token))
+            page = self._request_multi(url, page_params)
+            out.extend(page.get("searchKeywordsCounts", []) or [])
+            token = page.get("nextPageToken", "")
+            if not token:
+                break
+        return out
+
     def _request_multi(self, url: str, params: list[tuple[str, str]]) -> dict:
         """requests needs a list of pairs for repeated query keys; the normal
         dict path cannot express `dailyMetrics` appearing nine times."""

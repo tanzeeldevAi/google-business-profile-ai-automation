@@ -14,7 +14,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import db, images, llm, site
+from . import db, images, keywords as kw_mod, llm, site
 from .api import ApiError, Client
 from .rules import Snapshot
 
@@ -123,7 +123,8 @@ def choose_target(snap: Snapshot, location_name: str, cfg: dict,
 
 def draft(snap: Snapshot, topic: str, cfg: dict,
           page: "site.Page | None" = None,
-          site_data: "site.Site | None" = None) -> tuple[str, list[str]]:
+          site_data: "site.Site | None" = None,
+          analysis: "kw_mod.Analysis | None" = None) -> tuple[str, list[str]]:
     """Write the post. Returns the text and any problems that should stop it.
 
     When there is a source page, the result is checked against it: a number the
@@ -195,7 +196,8 @@ def draft(snap: Snapshot, topic: str, cfg: dict,
 def plan(snap: Snapshot, location_name: str, cfg: dict,
          *, topic: str | None = None, with_image: bool = True,
          site_data: "site.Site | None" = None,
-         url: str | None = None) -> PostDraft:
+         url: str | None = None,
+         analysis: "kw_mod.Analysis | None" = None) -> PostDraft:
     pcfg = cfg.get("posts", {}) or {}
     bcfg = cfg.get("business", {}) or {}
 
@@ -212,7 +214,8 @@ def plan(snap: Snapshot, location_name: str, cfg: dict,
     elif topic is None:
         topic, page = choose_target(snap, location_name, cfg, site_data)
 
-    text, problems = draft(snap, topic, cfg, page=page, site_data=site_data)
+    text, problems = draft(snap, topic, cfg, page=page, site_data=site_data,
+                           analysis=analysis)
 
     cta_type = (pcfg.get("cta_type") or "LEARN_MORE").upper()
     if cta_type not in CTA_TYPES:

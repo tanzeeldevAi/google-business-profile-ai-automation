@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from . import rules, site as site_mod
+from . import keywords as kw_mod, rules, site as site_mod
 from .api import ApiError, Client, split_location_id
 from .rules import CATEGORY_LABELS, Finding, Snapshot
 
@@ -31,6 +31,8 @@ class AuditResult:
     by_category: dict[str, dict[str, Any]]
     generated_at: datetime
     skipped: list[str]
+    # The search-term summary, so the report can show what people typed.
+    keywords: dict[str, Any] = None
 
     @property
     def title(self) -> str:
@@ -100,11 +102,13 @@ def score_findings(findings: list[Finding]) -> tuple[int, dict[str, dict]]:
 def fetch_snapshot(client: Client, account: str, location_name: str,
                    *, verbose: bool = True, cfg: dict | None = None,
                    fetch_site: bool = True
-                   ) -> tuple[Snapshot, list[str], "site_mod.Site | None"]:
+                   ) -> tuple[Snapshot, list[str], "site_mod.Site | None",
+                              "kw_mod.Analysis | None"]:
     """Pull everything we are allowed to see.
 
     Returns the snapshot, a list of human-readable reasons for anything we had
-    to skip, and the business's own website when we could read it.
+    to skip, the business's own website when we could read it, and the search
+    keyword analysis.
 
     The website is fetched automatically from the profile's websiteUri, which
     is what lets the description writer and the post writer use the company's
@@ -167,6 +171,25 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
         say(f"performance ... skipped -- {reason}")
         performance = {}
 
+    # The search terms Google reports. Monthly, and Google allows at most the
+    # last 12 months -- the current month is never included, so the window
+    # ends with last month.
+    kw_analysis = None
+    kw_summary: dict = {}
+    first_of_this_month = date.today().replace(day=1)
+    kw_end = first_of_this_month - timedelta(days=1)
+    kw_start = (kw_end.replace(day=1) - timedelta(days=330)).replace(day=1)
+    try:
+        raw = client.search_keywords(location_id, kw_start, kw_end)
+        parsed = kw_mod.parse(raw)
+        available.add("keywords")
+        say(f"search terms .. {len(parsed)} found")
+    except ApiError as exc:
+        reason = "no API access" if exc.status == 403 else f"error {exc.status}"
+        skipped.append(f"search terms ({reason})")
+        say(f"search terms .. skipped -- {reason}")
+        parsed = []
+
     # The business's own website. Never fatal: a site that is down or slow
     # must not stop an audit, so a failure is recorded and the run continues.
     site_data = None
@@ -191,7 +214,21 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
         place_actions=place_actions, site=site_summary, available=available,
         now=datetime.now(timezone.utc),
     )
-    return snap, skipped, site_data
+
+    # Keyword coverage is judged against the finished snapshot, because the
+    # question is "does the PROFILE mention this term", and that needs the
+    # description, categories and services to already be in place.
+    if parsed:
+        posts_text = " ".join((p.get("summary") or "") for p in posts)
+        kw_analysis = kw_mod.analyse(
+            parsed, snap,
+            site_text=(site_data.all_text if site_data and site_data.ok else ""),
+            posts_text=posts_text)
+        kw_analysis.months = (f"{kw_start:%b %Y} to {kw_end:%b %Y}")
+        kw_summary = kw_mod.to_snapshot_dict(kw_analysis)
+        snap.keywords = kw_summary
+
+    return snap, skipped, site_data, kw_analysis
 
 
 def audit(snapshot: Snapshot, cfg: dict | None = None,
@@ -206,6 +243,7 @@ def audit(snapshot: Snapshot, cfg: dict | None = None,
         by_category=by_cat,
         generated_at=snapshot.now,
         skipped=skipped or [],
+        keywords=snapshot.keywords or {},
     )
 
 

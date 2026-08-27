@@ -142,6 +142,30 @@ audit:
   min_questions: 5
   holiday_horizon_days: 60
 
+  # Search terms: what share of the non-brand terms Google reports must appear
+  # somewhere on the profile. 0.6 is a reasonable bar; a well-run profile hits
+  # 0.8+. Ignored until there are at least min_keywords_to_judge terms.
+  min_keyword_coverage: 0.6
+  min_keywords_to_judge: 5
+
+
+# -----------------------------------------------------------------------------
+# SERVICES FROM SEARCH TERMS
+#
+# Google's Performance tab reports the exact words people typed to find the
+# profile. `run.py keywords` shows them and marks which ones the profile never
+# mentions. `run.py fix --only services` turns those gaps into named services
+# with real descriptions, written from the website copy.
+#
+# READ EVERY PROPOSAL BEFORE APPLYING. A search term proves people looked for
+# something. It does NOT prove this business offers it. A service on a public
+# profile is a promise, and "emergency 24 hour callout" appearing in the search
+# data does not mean they do one.
+# -----------------------------------------------------------------------------
+services:
+  # How many new services to propose in one run.
+  max_new: 6
+
 
 # -----------------------------------------------------------------------------
 # REVIEWS
