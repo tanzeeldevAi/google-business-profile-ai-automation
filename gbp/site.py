@@ -96,6 +96,9 @@ class Site:
     services: dict[str, Page] = field(default_factory=dict)
     fetched_at: float = 0.0
     notes: list[str] = field(default_factory=list)
+    # Every URL the sitemap or the home page revealed. Not fetched, just known
+    # to exist -- enough for W5 to judge whether the site has real depth.
+    known_urls: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -335,7 +338,8 @@ def _load_cache(base_url: str, max_age_hours: float) -> Site | None:
         return None
     site = Site(base_url=raw.get("base_url", ""),
                 fetched_at=raw.get("fetched_at", 0),
-                notes=raw.get("notes", []))
+                notes=raw.get("notes", []),
+                known_urls=raw.get("known_urls", []) or [])
     if raw.get("home"):
         site.home = Page(**raw["home"])
     site.services = {k: Page(**v) for k, v in (raw.get("services") or {}).items()}
@@ -348,6 +352,7 @@ def _save_cache(site: Site) -> None:
             "base_url": site.base_url,
             "fetched_at": site.fetched_at,
             "notes": site.notes,
+            "known_urls": site.known_urls,
             "home": asdict(site.home) if site.home else None,
             "services": {k: asdict(v) for k, v in site.services.items()},
         }, indent=2), encoding="utf-8")
@@ -406,13 +411,22 @@ def load(cfg: dict, website_uri: str = "", *, force: bool = False,
         site.notes.append(f"home page: {site.home.error}")
         say(f"site .......... home page {site.home.error}")
 
+    # Everything the sitemap knows about, whether or not we fetch it. This is
+    # what W5 counts to judge whether the site has a page per service and area.
+    site.known_urls = [u for u in _from_sitemap(base, timeout, 200)
+                       if not SKIP_HINTS.search(u)]
+    if not site.known_urls and site.home and site.home.ok:
+        site.known_urls = [u for u in site.home.links
+                           if not SKIP_HINTS.search(u)]
+
     if listed:
         targets = [_normalise(u) for u in listed]
         say(f"site .......... {len(targets)} service page(s) from config")
     else:
         targets = discover_service_pages(base, site.home, limit=limit,
                                          timeout=timeout)
-        say(f"site .......... found {len(targets)} likely service page(s)")
+        say(f"site .......... found {len(targets)} likely service page(s), "
+            f"{len(site.known_urls)} page(s) on the site")
 
     for url in targets[:limit]:
         page = fetch_page(url, timeout, ua)
@@ -496,6 +510,7 @@ def to_snapshot_dict(site: Site) -> dict:
         "has_local_schema": bool(home.has_local_schema) if home and home.ok
         else False,
         "service_pages": len(site.services),
+        "page_count": len(site.known_urls),
         "title": home.title if home and home.ok else "",
     }
 

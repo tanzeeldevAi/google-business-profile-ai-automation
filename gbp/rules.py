@@ -113,7 +113,7 @@ class Snapshot:
     # are missing when we simply could not look would be worse than useless.
     available: set[str] = field(default_factory=lambda: {
         "location", "reviews", "posts", "media", "questions", "performance",
-        "place_actions", "site", "keywords"})
+        "place_actions", "site", "keywords", "attributes"})
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # ---------------------------------------------------------- small helpers
@@ -415,6 +415,65 @@ def n7_opening_date(s: Snapshot, cfg: dict) -> Finding:
     )
 
 
+SOCIAL_ATTRIBUTES = {
+    "url_facebook": "Facebook", "url_instagram": "Instagram",
+    "url_linkedin": "LinkedIn", "url_pinterest": "Pinterest",
+    "url_tiktok": "TikTok", "url_twitter": "X", "url_youtube": "YouTube",
+}
+
+
+@rule
+def n8_social_links(s: Snapshot, cfg: dict) -> Finding:
+    """Social links on the profile.
+
+    Handle with care. Google added social links to the Business Profile UI, but
+    at the time of writing they cannot be WRITTEN through the API, and whether
+    they are readable depends on the account. So this rule only judges when the
+    attributes payload actually contains social URL attributes. If it does not,
+    we cannot tell "none set" apart from "not exposed to us", and reporting
+    "no social links" in that case would be a fabricated finding.
+    """
+    if "attributes" not in s.available:
+        return _unknown("N8", "Social profiles are linked", "nap",
+                        "profile attribute")
+
+    attrs = s.attributes.get("attributes", []) or []
+    social_keys = set()
+    found: list[str] = []
+    for attr in attrs:
+        key = (attr.get("name", "") or "").split("/")[-1]
+        if key not in SOCIAL_ATTRIBUTES:
+            continue
+        social_keys.add(key)
+        values = attr.get("uriValues") or attr.get("urlValues") or []
+        if values:
+            found.append(SOCIAL_ATTRIBUTES[key])
+
+    if not social_keys:
+        return Finding(
+            "N8", "Social profiles are linked", "low", "nap", True,
+            informational=True,
+            detail="Not checked -- this Google account does not expose social "
+                   "link attributes through the API. Check the profile by hand: "
+                   "Edit profile, Contact, Social profiles.",
+            why="", fix="",
+        )
+
+    want = int(cfg.get("min_social_links", 2))
+    ok = len(found) >= want
+    return Finding(
+        "N8", "Social profiles are linked", "low", "nap", ok,
+        detail=(f"{len(found)} linked: {', '.join(found)}." if found else
+                "No social profiles linked."),
+        why="Google shows these on the profile and uses them to tie the listing "
+            "to the same business elsewhere on the web, which reinforces the "
+            "entity behind it.",
+        fix=f"Link at least {want} -- Facebook plus one other is the usual pair. "
+            "Only link accounts that are actually active: a dead Instagram with "
+            "three posts from 2021 does more harm than no link.",
+    )
+
+
 # ================================================================== categories
 
 @rule
@@ -633,6 +692,74 @@ def ct8_booking_link(s: Snapshot, cfg: dict) -> Finding:
     )
 
 
+@rule
+def ct9_service_location_words(s: Snapshot, cfg: dict) -> Finding:
+    items = s.location.get("serviceItems", []) or []
+    if not items:
+        return _unknown("CT9", "Services name the area they cover", "content",
+                        "the services list")
+
+    places = {p.get("placeName", "") for p in
+              (s.get("serviceArea.places.placeInfos", []) or [])}
+    if s.locality:
+        places.add(s.locality)
+    places = {p.lower() for p in places if p}
+    if not places:
+        return _unknown("CT9", "Services name the area they cover", "content",
+                        "any city or service area")
+
+    named = 0
+    for item in items:
+        label = (item.get("freeFormServiceItem", {}).get("label", {}) or {})
+        text = f"{label.get('displayName', '')}".lower()
+        if any(place in text for place in places):
+            named += 1
+
+    rate = named / len(items)
+    want = float(cfg.get("min_service_location_rate", 0.5))
+    ok = rate >= want
+    return Finding(
+        "CT9", "Services name the area they cover", "medium", "content", ok,
+        detail=f"{named} of {len(items)} service names mention a city or area "
+               f"you serve ({rate:.0%}).",
+        why="People search \"AC repair London\", not \"AC repair\". A service "
+            "named the way the search is actually typed matches it directly, "
+            "instead of relying on Google to infer the location from the pin.",
+        fix="Add a location variant for your 3 to 5 main services only. Do not "
+            "do it to all of them -- a services list where every line ends in "
+            "the same city name reads as spam to a customer and to Google.",
+    )
+
+
+@rule
+def ct10_service_description_depth(s: Snapshot, cfg: dict) -> Finding:
+    items = s.location.get("serviceItems", []) or []
+    lengths = []
+    for item in items:
+        label = (item.get("freeFormServiceItem", {}).get("label", {}) or {})
+        desc = (label.get("description")
+                or item.get("structuredServiceItem", {}).get("description") or "")
+        if desc:
+            lengths.append(len(desc))
+    if not lengths:
+        return _unknown("CT10", "Service descriptions have some depth", "content",
+                        "any service description")
+
+    avg = sum(lengths) / len(lengths)
+    want = int(cfg.get("min_service_desc_chars", 200))
+    ok = avg >= want
+    return Finding(
+        "CT10", "Service descriptions have some depth", "low", "content", ok,
+        detail=f"Average description is {avg:.0f} characters across "
+               f"{len(lengths)} service(s).",
+        why="A one-line description gives Google almost nothing to match a "
+            "long-tail search against, and answers none of the questions a "
+            "customer has before they call.",
+        fix="Aim for 250 to 350 characters each: what the job includes, which "
+            "areas it covers, and roughly what it costs or how long it takes.",
+    )
+
+
 # =============================================================== opening hours
 
 @rule
@@ -745,6 +872,39 @@ def m2_recent_photo(s: Snapshot, cfg: dict) -> Finding:
             "stopped two years ago reads as a business that may have stopped too.",
         fix=f"Upload a few real photos at least every {days} days. Finished jobs are "
             "the best kind -- they are new content and social proof at once.",
+    )
+
+
+@rule
+def m4_media_cadence(s: Snapshot, cfg: dict) -> Finding:
+    if "media" not in s.available:
+        return _unknown("M4", "Media is added regularly", "media", "photos")
+    window = int(cfg.get("media_window_days", 30))
+    want = int(cfg.get("min_media_per_month", 4))
+
+    recent = 0
+    for m in s.media:
+        # Customer-contributed media carries an attribution block. It is good
+        # to have, but it is not the business being active, so it does not
+        # count towards a cadence the owner controls.
+        if m.get("attribution"):
+            continue
+        age = s.days_since(m.get("createTime"))
+        if age is not None and age <= window:
+            recent += 1
+
+    ok = recent >= want
+    return Finding(
+        "M4", "Media is added regularly", "medium", "media", ok,
+        detail=f"{recent} photo(s) or video(s) added by the business in the "
+               f"last {window} days.",
+        why="M1 asks whether there are enough photos; this asks whether any are "
+            "still arriving. Forty photos uploaded once two years ago and "
+            "nothing since is not the same signal as one or two a week -- the "
+            "second reads as a business that is still trading.",
+        fix=f"Upload {want} or more real photos a month, or a short video. "
+            "Finished jobs are the best kind: new content and social proof at "
+            "the same time. Real photos taken on site, not stock.",
     )
 
 
@@ -929,7 +1089,78 @@ def p3_post_cta(s: Snapshot, cfg: dict) -> Finding:
     )
 
 
+@rule
+def r6_reply_relevance(s: Snapshot, cfg: dict) -> Finding:
+    if "reviews" not in s.available or not s.reviews:
+        return _unknown("R6", "Replies use words worth indexing", "reviews",
+                        "reviews")
+    replies = [(r.get("reviewReply", {}) or {}).get("comment", "")
+               for r in s.reviews]
+    replies = [t for t in replies if t]
+    if not replies:
+        return _unknown("R6", "Replies use words worth indexing", "reviews",
+                        "any owner reply")
+
+    cat = s.primary_category.get("displayName", "")
+    place = s.locality
+    relevant = 0
+    for text in replies:
+        low = text.lower()
+        if (cat and _mentions(low, cat)) or (place and place.lower() in low):
+            relevant += 1
+
+    rate = relevant / len(replies)
+    want = float(cfg.get("min_reply_relevance", 0.4))
+    ok = rate >= want
+    return Finding(
+        "R6", "Replies use words worth indexing", "low", "reviews", ok,
+        detail=f"{relevant} of {len(replies)} replies mention the service or "
+               f"the area ({rate:.0%}).",
+        why="A reply is owner-written text attached to the profile. It is the "
+            "one place in the reviews section where you choose the words, and "
+            "most owners spend it on \"thanks!\".",
+        fix="Name the job and the area naturally: \"glad we got the boiler "
+            "going again in Chester-le-Street\". Do NOT template it -- the same "
+            "sentence under every review is obvious to a customer reading them "
+            "in order, and to Google.",
+    )
+
+
 # =========================================================== questions/answers
+
+@rule
+def p4_posts_deep_link(s: Snapshot, cfg: dict) -> Finding:
+    if "posts" not in s.available or not s.posts:
+        return _unknown("P4", "Post buttons go to the right page", "posts",
+                        "posts")
+    urls = [(p.get("callToAction", {}) or {}).get("url", "")
+            for p in s.posts]
+    urls = [u for u in urls if u]
+    if not urls:
+        return _unknown("P4", "Post buttons go to the right page", "posts",
+                        "any post with a link")
+
+    def is_deep(url: str) -> bool:
+        # Anything past the domain counts as deep. "/" and "" do not.
+        path = re.sub(r"^https?://[^/]+", "", url).split("?")[0].split("#")[0]
+        return len(path.strip("/")) > 0
+
+    deep = sum(1 for u in urls if is_deep(u))
+    rate = deep / len(urls)
+    want = float(cfg.get("min_post_deep_link_rate", 0.6))
+    ok = rate >= want
+    return Finding(
+        "P4", "Post buttons go to the right page", "medium", "posts", ok,
+        detail=f"{deep} of {len(urls)} post buttons point at a specific page "
+               f"rather than the home page ({rate:.0%}).",
+        why="Sending every post to the home page throws away that post's "
+            "topical relevance, and makes the reader hunt for the thing they "
+            "just clicked about. A drain-cleaning post should land on the "
+            "drain-cleaning page.",
+        fix="Point each post's button at the matching service or location page. "
+            "If the page does not exist yet, that is worth knowing too.",
+    )
+
 
 @rule
 def q1_unanswered_questions(s: Snapshot, cfg: dict) -> Finding:
@@ -1047,6 +1278,67 @@ def w3_local_schema(s: Snapshot, cfg: dict) -> Finding:
         fix="Add LocalBusiness JSON-LD to the home page with the same name, "
             "address, phone, hours and URL as the Google profile. The details "
             "must match the profile exactly, or it works against you.",
+    )
+
+
+@rule
+def w4_website_deep_link(s: Snapshot, cfg: dict) -> Finding:
+    """Where the profile's website field points.
+
+    Only judged for a multi-location business, because for a single location
+    the home page IS the right target and marking it wrong would be bad advice.
+    Set business.multi_location in config.yaml to turn this on.
+    """
+    if not cfg.get("multi_location"):
+        return _unknown("W4", "Website field points at this location's page",
+                        "website", "multi-location")
+    uri = s.location.get("websiteUri", "") or ""
+    if not uri:
+        return _unknown("W4", "Website field points at this location's page",
+                        "website", "a linked website")
+    path = re.sub(r"^https?://[^/]+", "", uri).split("?")[0]
+    ok = len(path.strip("/")) > 0
+    return Finding(
+        "W4", "Website field points at this location's page", "medium",
+        "website", ok,
+        detail=(f"Points at {uri}" if ok else
+                f"Points at the site root ({uri}), not this location's page."),
+        why="On a multi-location business, every branch pointing at the same "
+            "home page gives Google nothing to distinguish them, and sends the "
+            "customer somewhere they have to search again for the branch they "
+            "just clicked.",
+        fix="Point each location's website field at that location's own page, "
+            "with its own address, hours and phone on it.",
+    )
+
+
+@rule
+def w5_service_area_pages(s: Snapshot, cfg: dict) -> Finding:
+    if "site" not in s.available or not (s.site or {}).get("ok"):
+        return _unknown("W5", "Site has pages per service and area", "website",
+                        "the website")
+    known = int(s.site.get("page_count") or 0)
+    if not known:
+        return _unknown("W5", "Site has pages per service and area", "website",
+                        "a readable sitemap")
+
+    services = len(s.location.get("serviceItems", []) or []) or \
+        (1 + len(s.additional_categories))
+    areas = len(s.get("serviceArea.places.placeInfos", []) or []) or 1
+    # Not services x areas -- that is a page-farm and Google treats it as one.
+    # The honest target is a page per main service, plus a page per main area.
+    want = max(3, min(services, 8) + min(areas, 6))
+    ok = known >= want
+    return Finding(
+        "W5", "Site has pages per service and area", "low", "website", ok,
+        detail=f"{known} page(s) found on the site; roughly {want} would cover "
+               f"{min(services, 8)} main service(s) and {min(areas, 6)} area(s).",
+        why="A profile can only rank for what the linked site backs up. One "
+            "page listing every service and every town gives Google one thing "
+            "to rank; a page each gives it a set of specific things to rank.",
+        fix="Build a page per main service, and a page per main area you serve. "
+            "Write each one properly -- a service page with the town swapped "
+            "out is duplicate content and will not rank.",
     )
 
 

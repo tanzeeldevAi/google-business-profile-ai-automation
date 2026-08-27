@@ -22,7 +22,8 @@ from gbp import rules  # noqa: E402
 from gbp.audit import audit, score_findings  # noqa: E402
 from gbp.rules import Snapshot  # noqa: E402
 
-from fixtures import NOW, bad_snapshot, good_location, good_snapshot  # noqa: E402
+from fixtures import (NOW, bad_snapshot, good_location, good_snapshot,  # noqa: E402
+                      iso)
 
 
 # ------------------------------------------------------------------ the tests
@@ -70,6 +71,117 @@ empty = bad_snapshot()
 empty.location["profile"] = {"description": ""}
 check("CT1 fails when there is no description",
       not by_id(rules.run_all(empty, {}))["CT1"].passed)
+
+print("\n== the depth rules (services, replies, posts, media, social) ==")
+# These judge QUALITY, not presence, so each needs its own before/after rather
+# than the blanket pairing above.
+check("CT9 passes when services name the area", good["CT9"].passed,
+      good["CT9"].detail)
+no_place = good_snapshot()
+no_place.location["serviceItems"] = [
+    {"freeFormServiceItem": {"label": {"displayName": "Boiler repair",
+                                       "description": "x" * 250}}}] * 4
+np_f = by_id(rules.run_all(no_place, {}))
+check("CT9 fails when no service names an area", not np_f["CT9"].passed,
+      np_f["CT9"].detail)
+check("CT9 warns against doing it to every service",
+      "not" in np_f["CT9"].fix.lower() and "spam" in np_f["CT9"].fix.lower())
+
+check("CT10 passes on substantial descriptions", good["CT10"].passed,
+      good["CT10"].detail)
+thin = good_snapshot()
+thin.location["serviceItems"] = [
+    {"freeFormServiceItem": {"label": {"displayName": "Boiler repair Durham",
+                                       "description": "We fix boilers."}}}] * 4
+check("CT10 fails on one-line descriptions",
+      not by_id(rules.run_all(thin, {}))["CT10"].passed)
+check("CT10 is only low severity", good["CT10"].severity == "low")
+
+check("R6 passes when replies name the job and area", good["R6"].passed,
+      good["R6"].detail)
+bland = good_snapshot()
+bland.reviews = [{"starRating": "FIVE", "createTime": iso(3),
+                  "reviewReply": {"comment": "Thanks!"}} for _ in range(10)]
+bl_f = by_id(rules.run_all(bland, {}))
+check("R6 fails on 'thanks!' replies", not bl_f["R6"].passed, bl_f["R6"].detail)
+check("R6 warns against templating", "template" in bl_f["R6"].fix.lower())
+noreply = good_snapshot()
+noreply.reviews = [{"starRating": "FIVE", "createTime": iso(3)}]
+check("R6 is not checked when there are no replies yet",
+      by_id(rules.run_all(noreply, {}))["R6"].informational)
+
+check("P4 passes on deep-linked posts", good["P4"].passed, good["P4"].detail)
+check("P4 fails when posts point at the home page", not bad["P4"].passed,
+      bad["P4"].detail)
+root_variants = good_snapshot()
+root_variants.posts = [
+    {"createTime": iso(1), "callToAction": {"url": "https://x.com"}},
+    {"createTime": iso(2), "callToAction": {"url": "https://x.com/"}},
+    {"createTime": iso(3), "callToAction": {"url": "https://x.com/?utm=a"}},
+]
+check("P4 treats /, bare domain and ?query as the home page",
+      not by_id(rules.run_all(root_variants, {}))["P4"].passed)
+call_only = good_snapshot()
+call_only.posts = [{"createTime": iso(1),
+                    "callToAction": {"actionType": "CALL"}}]
+check("P4 is not checked when posts only have a Call button",
+      by_id(rules.run_all(call_only, {}))["P4"].informational)
+
+check("M4 passes when media keeps arriving", good["M4"].passed, good["M4"].detail)
+check("M4 fails on a stale gallery", not bad["M4"].passed, bad["M4"].detail)
+customer_only = good_snapshot()
+customer_only.media = [{"mediaFormat": "PHOTO", "createTime": iso(1),
+                        "attribution": {"profileName": "A customer"}}
+                       for _ in range(20)]
+check("M4 does not count customer photos as the business being active",
+      not by_id(rules.run_all(customer_only, {}))["M4"].passed,
+      by_id(rules.run_all(customer_only, {}))["M4"].detail)
+
+check("N8 passes with two social links", good["N8"].passed, good["N8"].detail)
+check("N8 fails when the fields exist but are empty", not bad["N8"].passed,
+      bad["N8"].detail)
+# The important one: Google does not expose social links on every account, and
+# "not exposed" must never be reported as "not set".
+hidden = good_snapshot()
+hidden.attributes = {"attributes": [{"name": "attributes/has_wheelchair"}]}
+hid_f = by_id(rules.run_all(hidden, {}))
+check("N8 says 'check by hand' when the API hides social attributes",
+      hid_f["N8"].informational, hid_f["N8"].detail)
+check("N8's unknown tells you where to look",
+      "Social profiles" in hid_f["N8"].detail)
+
+print("\n== the website depth rules ==")
+check("W4 is not judged for a single location", good["W4"].informational)
+multi = good_snapshot()
+multi.location["websiteUri"] = "https://northgateplumbing.co.uk"
+check("W4 fails a multi-location profile pointing at the site root",
+      not by_id(rules.run_all(multi, {"multi_location": True}))["W4"].passed)
+deep = good_snapshot()
+deep.location["websiteUri"] = "https://northgateplumbing.co.uk/durham/"
+check("W4 passes when it points at the branch page",
+      by_id(rules.run_all(deep, {"multi_location": True}))["W4"].passed)
+
+check("W5 is not checked without site data", good["W5"].informational)
+thin_site = good_snapshot()
+thin_site.site = {"ok": True, "page_count": 2}
+check("W5 fails a two-page site for a six-service business",
+      not by_id(rules.run_all(thin_site, {}))["W5"].passed)
+deep_site = good_snapshot()
+deep_site.site = {"ok": True, "page_count": 40}
+check("W5 passes a site with real depth",
+      by_id(rules.run_all(deep_site, {}))["W5"].passed)
+check("W5 warns against town-swapped duplicate pages",
+      "duplicate" in by_id(rules.run_all(thin_site, {}))["W5"].fix.lower())
+
+print("\n== N1 is NOT weakened by any of this ==")
+# A training video recommending keyword-stuffed business names does not change
+# that Google suspends for it. This rule stays.
+stuffed_again = good_snapshot()
+stuffed_again.location["title"] = "Best Plumber Durham 24/7"
+check("a keyword-stuffed name is still flagged",
+      not by_id(rules.run_all(stuffed_again, {}))["N1"].passed)
+check("N1 still calls it a suspension risk",
+      "suspension" in by_id(rules.run_all(stuffed_again, {}))["N1"].why.lower())
 
 print("\n== every finding is written for a human ==")
 for rid, f in good.items():

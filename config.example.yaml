@@ -148,6 +148,29 @@ audit:
   min_keyword_coverage: 0.6
   min_keywords_to_judge: 5
 
+  # Depth checks -- these judge quality rather than presence.
+  # Share of service NAMES that should mention a city or area you serve.
+  # Deliberately not 100%: every line ending in the same town reads as spam.
+  min_service_location_rate: 0.5
+  # Average service description length. 250-350 each is the working target.
+  min_service_desc_chars: 200
+  # Share of owner review replies that should name the service or the area.
+  min_reply_relevance: 0.4
+  # Share of post buttons that should point at a specific page, not the home page.
+  min_post_deep_link_rate: 0.6
+  # Photos or videos the BUSINESS adds per month (customer photos do not count).
+  min_media_per_month: 4
+  media_window_days: 30
+  # Social profiles linked on the profile. Only judged when Google exposes them
+  # through the API, which it does not do on every account.
+  min_social_links: 2
+
+  # Set true only for a business with more than one location. It turns on W4,
+  # which checks that this location's website field points at ITS OWN page
+  # rather than the shared home page. For a single location the home page is
+  # correct, so W4 stays off and reports "not checked".
+  multi_location: false
+
 
 # -----------------------------------------------------------------------------
 # SERVICES FROM SEARCH TERMS

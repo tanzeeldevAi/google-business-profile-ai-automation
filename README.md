@@ -2,7 +2,7 @@
 
 # GBP Autopilot — Audit, Fix and Run a Google Business Profile
 
-**Scores a Google Business Profile against 45 local SEO rules, writes a client-ready report,
+**Scores a Google Business Profile against 53 local SEO rules, writes a client-ready report,
 fixes what it can through the API, answers every review, posts weekly, sets holiday hours, and
 tells you the moment Google changes something behind your back.**
 
@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-384%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-422%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -47,20 +47,20 @@ and after first.
 
 ## What it checks
 
-45 rules across twelve areas, each weighted by what it actually costs you:
+53 rules across twelve areas, each weighted by what it actually costs you:
 
 | | |
 |---|---|
 | 🩺 **Profile health** | Verified, open, no edits stuck in review, not flagged as a duplicate |
-| 📛 **Name, address, phone** | Complete NAP, service areas, website, and a check on whether the name looks keyword-stuffed — the most-reported violation there is, and the penalty is suspension, not a ranking dip |
+| 📛 **Name, address, phone** | Complete NAP, service areas, website, social profiles, and a check on whether the name looks keyword-stuffed — the most-reported violation there is, and the penalty is suspension, not a ranking dip |
 | 🗂️ **Categories** | Primary set, secondary categories used (most profiles leave all nine empty), not over-stuffed |
-| 📝 **Description and services** | Written, long enough, no URLs or offers (Google strips them), names the service and the city, services listed and described, attributes filled, booking link |
+| 📝 **Description and services** | Written, long enough, no URLs or offers (Google strips them), names the service and the city, services listed and described, **service names carry the area, descriptions have real depth**, attributes filled, booking link |
 | 🕗 **Hours** | Set, complete for the week, and holiday hours set ahead |
-| 📸 **Photos** | Enough of them, added recently, at least one video |
-| ⭐ **Reviews** | Count, rating, **response rate**, nothing left waiting, still coming in |
-| 📣 **Posts** | Posted in the last 7 days, posting regularly, every post has a button |
+| 📸 **Photos** | Enough of them, added recently, **still arriving each month**, at least one video |
+| ⭐ **Reviews** | Count, rating, **response rate**, nothing left waiting, still coming in, and whether the owner's replies say anything worth indexing |
+| 📣 **Posts** | Posted in the last 7 days, posting regularly, every post has a button, **and the button goes to the right page not the home page** |
 | ❓ **Q&A** | Nothing unanswered, common questions seeded by the owner |
-| 🌐 **Website** | Reachable, the profile's phone actually appears on it, LocalBusiness schema present |
+| 🌐 **Website** | Reachable, the profile's phone actually appears on it, LocalBusiness schema present, **enough pages to back the services and areas** |
 | 🔎 **Search terms** | The words people actually typed to find the profile, and whether the profile says any of them |
 | 📈 **Performance** | 90 days of views and actions from Google's own data |
 
@@ -159,13 +159,13 @@ writer may take claims from, so keep every line true and checkable.
 ### Step 4 — Prove it works before touching a live profile
 
 ```bash
-python test/test_rules.py     # 138 checks: every rule, on a good profile and a broken one
+python test/test_rules.py     # 176 checks: every rule, on a good profile and a broken one
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
 python test/test_keywords.py  #  73 checks: search terms, coverage, clustering
 python test/smoke_test.py     # 110 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**384 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**422 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -467,7 +467,7 @@ run.py               the CLI
 gbp/
   auth.py            OAuth, token refresh, and the 7-day Testing-mode trap
   api.py             the Business Profile APIs, across all six hosts
-  rules.py           THE RULE SET. 45 local SEO rules, each with why and fix
+  rules.py           THE RULE SET. 53 local SEO rules, each with why and fix
   audit.py           fetches a snapshot, runs the rules, scores it
   report.py          the client-facing HTML report
   fix.py             applies what can be applied, dry-run first
@@ -480,7 +480,7 @@ gbp/
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                384 offline checks
+test/                422 offline checks
 ```
 
 ---

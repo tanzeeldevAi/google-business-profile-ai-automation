@@ -64,9 +64,17 @@ def good_location() -> dict:
         )},
         "serviceItems": [
             {"freeFormServiceItem": {"label": {
-                "displayName": f"Service {i}",
-                "description": "What is included and roughly how long it takes."}}}
-            for i in range(6)
+                "displayName": name,
+                "description": (
+                    "Covers the full job from first look to test and sign-off, "
+                    "including parts we carry on the van. We quote before we "
+                    "start and most visits are finished the same day. Available "
+                    "across Durham, Chester-le-Street and Spennymoor, with a "
+                    "same-day option for anything urgent.")}}}
+            for name in ["Emergency plumbing Durham", "Boiler repair Durham",
+                         "Blocked drains Chester-le-Street",
+                         "Bathroom installation", "Power flushing",
+                         "Underfloor heating"]
         ],
     }
 
@@ -93,13 +101,23 @@ def good_snapshot() -> Snapshot:
     return Snapshot(
         location=good_location(),
         reviews=[{"starRating": "FIVE", "createTime": iso(i * 3),
-                  "reviewReply": {"comment": "Thanks!"}} for i in range(30)],
-        posts=[{"createTime": iso(i * 7), "callToAction": {"actionType": "CALL"}}
+                  "reviewReply": {"comment": (
+                      "Thanks, glad we got the plumbing sorted in Durham.")}}
+                 for i in range(30)],
+        posts=[{"createTime": iso(i * 7),
+                "callToAction": {
+                    "actionType": "LEARN_MORE",
+                    "url": "https://northgateplumbing.co.uk/services/boiler-repair/"}}
                for i in range(12)],
         media=([{"mediaFormat": "PHOTO", "createTime": iso(i * 2)} for i in range(24)]
                + [{"mediaFormat": "VIDEO", "createTime": iso(10)}]),
         questions=[{"topAnswers": [{"text": "Yes."}]} for _ in range(6)],
-        attributes={"attributes": [{"name": f"attr/{i}"} for i in range(8)]},
+        attributes={"attributes": (
+            [{"name": f"attributes/attr_{i}"} for i in range(8)]
+            + [{"name": "attributes/url_facebook",
+                "uriValues": [{"uri": "https://facebook.com/northgate"}]},
+               {"name": "attributes/url_instagram",
+                "uriValues": [{"uri": "https://instagram.com/northgate"}]}])},
         place_actions=[{"placeActionType": "APPOINTMENT",
                         "uri": "https://northgateplumbing.co.uk/book"}],
         performance={"multiDailyMetricTimeSeries": [{"dailyMetricTimeSeries": [
@@ -116,10 +134,14 @@ def bad_snapshot() -> Snapshot:
     return Snapshot(
         location=bad_location(),
         reviews=[{"starRating": "TWO", "createTime": iso(400)} for _ in range(4)],
-        posts=[{"createTime": iso(300)}],
+        posts=[{"createTime": iso(300),
+                "callToAction": {"actionType": "LEARN_MORE",
+                                 "url": "https://example.com/"}}],
         media=[{"mediaFormat": "PHOTO", "createTime": iso(500)}],
         questions=[{"topAnswers": []}, {"topAnswers": []}],
-        attributes={"attributes": []},
+        attributes={"attributes": [
+            {"name": "attributes/url_facebook"},
+            {"name": "attributes/url_instagram"}]},
         place_actions=[],
         performance={},
         now=NOW,
