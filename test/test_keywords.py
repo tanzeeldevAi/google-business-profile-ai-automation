@@ -111,6 +111,45 @@ check("matching only the business name is not coverage",
       by_term["plumber durham"].places != ["business name"],
       str(by_term["plumber durham"].places))
 
+print("\n== addresses are not keyword gaps ==")
+# From the first live run: the single biggest "search term" on a real profile
+# was a full postal address with a PO box, reported as a gap to fix. It is a
+# real search, but "add your own address to your services list" is not advice.
+ADDRESSES = [
+    "al noor business centre, 3rd floor, suite 305, almadina road south, p.o.box:44042",
+    "nour solutions, ibn, king abdulaziz street, khobar",
+    "14 mill road, durham, dh1 3ab, england",
+]
+for _term in ADDRESSES:
+    check(f"address detected: {_term[:34]}", kw.looks_like_an_address(_term))
+
+NOT_ADDRESSES = [
+    "boiler repair durham",
+    "emergency plumber near me",
+    # 57 characters. A 55-char length cut-off flagged this real long-tail
+    # service search, which is exactly what the module exists to surface.
+    "data center compliance auditing companies in saudi arabia",
+    "business management consultant",
+]
+for _term in NOT_ADDRESSES:
+    check(f"not an address: {_term[:34]}", not kw.looks_like_an_address(_term))
+
+addr_kw = kw.parse([
+    {"searchKeyword": "boiler repair durham", "insightsValue": {"value": "100"}},
+    {"searchKeyword": "14 mill road, durham, dh1 3ab, england",
+     "insightsValue": {"value": "500"}},
+])
+addr_an = kw.analyse(addr_kw, snap)
+check("an address never becomes a gap",
+      all(not c.is_address for c in addr_an.gaps),
+      str([c.keyword.term for c in addr_an.gaps]))
+check("an address is left out of the actionable count",
+      len(addr_an.discovery) == 1, str(len(addr_an.discovery)))
+check("but it is still listed, flagged as an address",
+      any(c.is_address for c in addr_an.coverage))
+check("a big address does not inflate missed impressions",
+      addr_an.missed_impressions < 500, str(addr_an.missed_impressions))
+
 print("\n== the numbers the report uses ==")
 check("brand and discovery are separated",
       len(analysis.brand) >= 2 and len(analysis.discovery) >= 8,

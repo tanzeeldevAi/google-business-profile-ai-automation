@@ -392,7 +392,7 @@ def load(cfg: dict, website_uri: str = "", *, force: bool = False,
         if cached:
             if verbose:
                 age = (time.time() - cached.fetched_at) / 3600
-                print(f"  site .......... cached, {age:.0f}h old "
+                print(f"  {'site ':.<15} cached, {age:.0f}h old "
                       f"({len(cached.services)} service page(s))")
             return cached
 
@@ -405,11 +405,11 @@ def load(cfg: dict, website_uri: str = "", *, force: bool = False,
         if verbose:
             print(f"  {msg}")
 
-    say(f"site .......... reading {base}")
+    say(f"{'site ':.<15} reading {base}")
     site.home = fetch_page(base, timeout, ua)
     if not site.home.ok:
         site.notes.append(f"home page: {site.home.error}")
-        say(f"site .......... home page {site.home.error}")
+        say(f"{'site ':.<15} home page {site.home.error}")
 
     # Everything the sitemap knows about, whether or not we fetch it. This is
     # what W5 counts to judge whether the site has a page per service and area.
@@ -421,11 +421,11 @@ def load(cfg: dict, website_uri: str = "", *, force: bool = False,
 
     if listed:
         targets = [_normalise(u) for u in listed]
-        say(f"site .......... {len(targets)} service page(s) from config")
+        say(f"{'site ':.<15} {len(targets)} service page(s) from config")
     else:
         targets = discover_service_pages(base, site.home, limit=limit,
                                          timeout=timeout)
-        say(f"site .......... found {len(targets)} likely service page(s), "
+        say(f"{'site ':.<15} found {len(targets)} likely service page(s), "
             f"{len(site.known_urls)} page(s) on the site")
 
     for url in targets[:limit]:

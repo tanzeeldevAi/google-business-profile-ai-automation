@@ -28,6 +28,18 @@ from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
 from gbp.api import ApiError, Client, split_location_id
 from gbp.auth import AuthError
 
+# Windows consoles still default to a legacy code page (cp1252 in western
+# locales), which cannot encode Arabic, Urdu, Chinese or an emoji. The first
+# live run of this tool died here: a profile in Khobar returns its search terms
+# in Arabic, and printing one killed the whole audit after all the work was
+# done. Force UTF-8, and fall back to replacement characters rather than losing
+# a run to an encoding error.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):  # already UTF-8, or not a real stream
+        pass
+
 
 # ------------------------------------------------------------------- plumbing
 
@@ -357,11 +369,21 @@ def cmd_citations(args) -> int:
         client, cfg, args, verbose=not args.quiet, fetch_site=False)
 
     ccfg = cfg.get("competitors", {}) or {}
+    # The organic endpoint refuses a task with no location, so fall back to the
+    # country on the profile rather than letting the request be rejected and
+    # reported as "no listings found".
+    where = ccfg.get("location_name") or dfs.location_for(snap.region_code)
+    if not where:
+        print(f"\n  Could not work out a search location for region code "
+              f"'{snap.region_code}'.\n  Set competitors.location_name in "
+              f"config.yaml, e.g. \"Saudi Arabia\".\n")
+        return 1
+
     check = citations.find(
         snap.title,
         snap.locality or (cfg.get("business", {}) or {}).get("city", ""),
         snap.get("phoneNumbers.primaryPhone", "") or "",
-        location_name=ccfg.get("location_name", ""),
+        location_name=where,
         language_code=ccfg.get("language_code", "en"),
         max_pages=int((cfg.get("citations", {}) or {}).get("max_pages", 10)),
         user_agent=(cfg.get("website", {}) or {}).get("user_agent", ""),

@@ -124,20 +124,20 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
 
     location = client.location(location_name)
     available.add("location")
-    say(f"profile ....... {location.get('title', '?')}")
+    say(f"{'profile ':.<15} {location.get('title', '?')}")
 
     def attempt(label: str, key: str, fn):
         try:
             value = fn()
             available.add(key)
             n = len(value) if isinstance(value, (list, dict)) else 0
-            say(f"{label:.<14} {n} item(s)" if isinstance(value, list)
-                else f"{label:.<14} ok")
+            say(f"{label + ' ':.<15} {n} item(s)" if isinstance(value, list)
+                else f"{label + ' ':.<15} ok")
             return value
         except ApiError as exc:
             reason = "no API access" if exc.status == 403 else f"error {exc.status}"
             skipped.append(f"{label.strip()} ({reason})")
-            say(f"{label:.<14} skipped -- {reason}")
+            say(f"{label + ' ':.<15} skipped -- {reason}")
             return [] if key != "performance" else {}
 
     reviews = attempt("reviews", "reviews",
@@ -154,7 +154,8 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
     try:
         attributes = client.attributes(location_name)
         available.add("attributes")
-        say(f"attributes .... {len(attributes.get('attributes', []) or [])} set")
+        say(f"{'attributes ':.<15} "
+            f"{len(attributes.get('attributes', []) or [])} set")
     except ApiError as exc:
         skipped.append(f"attributes (error {exc.status})")
         attributes = {}
@@ -164,11 +165,11 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
     try:
         performance = client.performance(location_id, start, end)
         available.add("performance")
-        say("performance ... 90 days pulled")
+        say(f"{'performance ':.<15} 90 days pulled")
     except ApiError as exc:
         reason = "no API access" if exc.status == 403 else f"error {exc.status}"
         skipped.append(f"performance ({reason})")
-        say(f"performance ... skipped -- {reason}")
+        say(f"{'performance ':.<15} skipped -- {reason}")
         performance = {}
 
     # The search terms Google reports. Monthly, and Google allows at most the
@@ -183,11 +184,11 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
         raw = client.search_keywords(location_id, kw_start, kw_end)
         parsed = kw_mod.parse(raw)
         available.add("keywords")
-        say(f"search terms .. {len(parsed)} found")
+        say(f"{'search terms ':.<15} {len(parsed)} found")
     except ApiError as exc:
         reason = "no API access" if exc.status == 403 else f"error {exc.status}"
         skipped.append(f"search terms ({reason})")
-        say(f"search terms .. skipped -- {reason}")
+        say(f"{'search terms ':.<15} skipped -- {reason}")
         parsed = []
 
     # The business's own website. Never fatal: a site that is down or slow
@@ -206,7 +207,7 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
                                               or "nothing readable") + ")")
         except Exception as exc:
             skipped.append(f"website (error: {type(exc).__name__})")
-            say(f"site .......... skipped -- {exc}")
+            say(f"{'site ':.<15} skipped -- {exc}")
 
     snap = Snapshot(
         location=location, reviews=reviews, posts=posts, media=media,

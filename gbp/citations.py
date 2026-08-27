@@ -150,8 +150,9 @@ def find(business_name: str, city: str, our_phone: str, *,
     if not check.listings:
         check.notes.append(
             "No listings on known directories appeared in the search results. "
-            "That may mean there are none, or that they rank below the depth "
-            "searched.")
+            "That may mean there are none, that they rank below the depth "
+            "searched, or that this market uses directories not in the list in "
+            "citations.py -- which is weighted towards the UK, US and Gulf.")
         return check
 
     for listing in check.listings:
@@ -201,7 +202,13 @@ def show(check: CitationCheck) -> None:
 
     bad = check.mismatched
     print()
-    if bad:
+    if not check.read:
+        # "Every readable listing agrees" is technically true of an empty set
+        # and reads as a clean bill of health. It is not one.
+        print("  None of these could be read, so nothing was actually checked.")
+        print("  Most were blocked or are rendered by JavaScript. Open them by "
+              "hand and\n  confirm the phone number matches the profile.")
+    elif bad:
         print(f"  {len(bad)} listing(s) show a DIFFERENT phone number to your "
               f"Google profile:")
         for l in bad:
@@ -211,7 +218,8 @@ def show(check: CitationCheck) -> None:
               "Google that\n  the details may be wrong, and it sends real "
               "customers to a dead line.")
     else:
-        print("  Every readable listing agrees with the profile's phone number.")
+        print(f"  All {len(check.read)} readable listing(s) agree with the "
+              f"profile's phone number.")
 
     if check.silent:
         print(f"\n  {len(check.silent)} listing(s) show no phone at all "

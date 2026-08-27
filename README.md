@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-496%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-507%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -165,12 +165,12 @@ writer may take claims from, so keep every line true and checkable.
 ```bash
 python test/test_rules.py     # 180 checks: every rule, on a good profile and a broken one
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
-python test/test_keywords.py  #  73 checks: search terms, coverage, clustering
+python test/test_keywords.py  #  84 checks: search terms, coverage, clustering
 python test/test_competitors.py # 70 checks: map-pack comparison, NAP consistency
 python test/smoke_test.py     # 110 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**496 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**507 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -305,6 +305,11 @@ Finds the business on known directories and checks the phone number on each agai
 A page with **no** phone visible is reported as "not shown", never as a mismatch — plenty of
 directories hide the number behind a click, and calling that an inconsistency would be a
 fabricated finding. A page we can't read is reported as unread.
+
+The directory list in `citations.py` is weighted towards the UK, US and Gulf. If a market uses
+directories that aren't in it, the tool says so rather than reporting a clean run — and if nothing
+could be read, it says *that* too, instead of "every readable listing agrees", which is technically
+true of an empty set and reads as a clean bill of health.
 
 > **There is deliberately no citation-count rule.** "Get listed on 40–50 directories" is a number
 > that gets repeated in training material and sold by citation vendors. Consistency across the
@@ -567,7 +572,7 @@ gbp/
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                496 offline checks
+test/                507 offline checks
 ```
 
 ---

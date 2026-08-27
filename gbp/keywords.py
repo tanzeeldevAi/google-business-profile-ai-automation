@@ -43,6 +43,35 @@ NOT_A_SERVICE = re.compile(
     r"^(near me|open now|number|phone number|contact|address|directions|"
     r"opening hours|hours|reviews|prices?|cost|quote)$", re.I)
 
+# Markers of somebody typing a postal address into the search box. Seen on the
+# very first live profile this was pointed at: the single biggest "search term"
+# was a full street address with a PO box, reported as a keyword gap. It is a
+# real search, but "put your own address in your services list" is not advice.
+ADDRESS_MARKERS = re.compile(
+    r"\b(p\.?\s?o\.?\s?box|postbox|suite|apt|apartment|floor|bldg|building|"
+    r"street|st\.|road|rd\.|avenue|ave\.|boulevard|blvd|lane|zip|postcode)\b",
+    re.I)
+
+
+def looks_like_an_address(term: str) -> bool:
+    """Is this someone typing an address rather than looking for a service?
+
+    Three independent signals, any one of which is enough:
+      * an explicit address word (PO Box, Suite, Street, Floor)
+      * three or more commas, which prose searches do not have
+      * absurdly long -- a backstop, not the main test
+
+    The length backstop is deliberately loose. At 55 characters it caught
+    "data center compliance auditing companies in saudi arabia", which is a
+    real service search and exactly the kind of long-tail term this whole
+    module exists to surface. The markers and the commas do the real work.
+    """
+    if ADDRESS_MARKERS.search(term):
+        return True
+    if term.count(",") >= 3:
+        return True
+    return len(term) > 90
+
 
 # Longest first, so "ations" is tried before "s".
 _SUFFIXES = ("ations", "ation", "ments", "ment", "ings", "ing", "ers", "er",
@@ -100,10 +129,20 @@ class Coverage:
     keyword: Keyword
     is_brand: bool
     places: list[str] = field(default_factory=list)
+    is_address: bool = False
 
     @property
     def covered(self) -> bool:
         return bool(self.places)
+
+    @property
+    def actionable(self) -> bool:
+        """Could this term reasonably be put back into the profile?
+
+        A brand search you already win. An address is not a service. Neither
+        belongs in a list of things to go and fix.
+        """
+        return not self.is_brand and not self.is_address
 
 
 @dataclass
@@ -121,9 +160,14 @@ class Analysis:
 
     @property
     def discovery(self) -> list[Coverage]:
-        """Terms that are not the business's own name. These are the ones worth
-        competing for -- a brand search was always going to find you."""
-        return [c for c in self.coverage if not c.is_brand]
+        """Terms worth competing for: not the business's own name, and not
+        somebody typing an address. A brand search was always going to find
+        you, and an address is not a service."""
+        return [c for c in self.coverage if c.actionable]
+
+    @property
+    def addresses(self) -> list[Coverage]:
+        return [c for c in self.coverage if c.is_address]
 
     @property
     def gaps(self) -> list[Coverage]:
@@ -228,7 +272,8 @@ def analyse(keywords: list[Keyword], snap, site_text: str = "",
         # Matching only the business name is not coverage of a discovery term.
         if not is_brand and places == ["business name"]:
             places = []
-        coverage.append(Coverage(kw, is_brand, places))
+        coverage.append(Coverage(kw, is_brand, places,
+                                 is_address=looks_like_an_address(kw.term)))
 
     return Analysis(keywords=keywords, coverage=coverage, drop_stems=drop)
 
@@ -342,14 +387,18 @@ def show(analysis: Analysis, limit: int = 25) -> None:
     print("  " + "-" * 76)
     for c in analysis.coverage[:limit]:
         where = ", ".join(c.places) if c.places else "NOWHERE"
-        tag = " [brand]" if c.is_brand else ""
+        tag = " [brand]" if c.is_brand else (" [address]" if c.is_address else "")
         print(f"  {c.keyword.term[:43]:<44} {c.keyword.label:>8}   "
               f"{where}{tag}")
     if len(analysis.coverage) > limit:
         print(f"  ... and {len(analysis.coverage) - limit} more")
 
     disc = analysis.discovery
-    print(f"\n  Non-brand terms: {len(disc)}   "
+    if analysis.addresses:
+        print(f"\n  {len(analysis.addresses)} term(s) are somebody typing an "
+              f"address. Real searches, but not something\n  you can put in a "
+              f"services list, so they are left out of the count below.")
+    print(f"\n  Actionable terms: {len(disc)}   "
           f"covered by the profile: {analysis.covered_rate:.0%}")
     if analysis.gaps:
         print(f"  {len(analysis.gaps)} term(s) appear nowhere on the profile, "

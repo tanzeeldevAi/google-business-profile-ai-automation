@@ -69,13 +69,21 @@ def _cache_path(endpoint: str, payload: list[dict]) -> Path:
     return d / f"{key}.json"
 
 
+# Per-task codes that mean "try again", not "you asked for the wrong thing".
+# 40101 is DataForSEO's own upstream hiccup: the identical query can fail and
+# then succeed seconds later. Seen on the first live citation run.
+TRANSIENT_TASK_CODES = {40101, 40102, 40103, 50000, 50100, 50200, 50300}
+
+
 def post(endpoint: str, payload: list[dict], *, cache_hours: float = 24,
-         timeout: int = 120, verbose: bool = True) -> list[dict]:
+         timeout: int = 120, verbose: bool = True,
+         retries: int = 3) -> list[dict]:
     """POST to a live endpoint and return the `result` list of the first task.
 
     DataForSEO wraps everything twice -- tasks[] then result[] -- and reports
-    per-task failures inside a 200 response, so the status code alone tells you
-    nothing.
+    per-task failures inside a 200 response, so the HTTP status alone tells you
+    nothing. A task rejected for a bad request raises; a task that failed
+    upstream is retried.
     """
     login, password = _auth()
     path = _cache_path(endpoint, payload)
@@ -90,40 +98,62 @@ def post(endpoint: str, payload: list[dict], *, cache_hours: float = 24,
             except json.JSONDecodeError:
                 pass
 
-    if verbose:
-        print(f"  [dfs] POST {endpoint}  ({len(payload)} task(s), billed)")
-
-    try:
-        resp = requests.post(f"{BASE}/{endpoint.lstrip('/')}",
-                             auth=(login, password), json=payload,
-                             timeout=timeout)
-    except requests.RequestException as exc:
-        raise DataForSeoError(f"Could not reach DataForSEO: {exc}") from exc
-
-    if resp.status_code == 401:
-        raise DataForSeoError("DataForSEO rejected the login. Check "
-                              "DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD.")
-    if resp.status_code >= 300:
-        raise DataForSeoError(f"DataForSEO returned {resp.status_code}: "
-                              f"{resp.text[:300]}")
-
-    body = resp.json()
-    if body.get("status_code") not in (20000, None):
-        raise DataForSeoError(f"DataForSEO: {body.get('status_message')}")
-
-    tasks = body.get("tasks") or []
-    if not tasks:
-        return []
-
     out: list[dict] = []
-    for task in tasks:
-        # 20000 is success. Anything else is a per-task failure inside a 200.
-        if task.get("status_code") != 20000:
-            message = task.get("status_message", "unknown error")
+    failures: list[str] = []
+
+    for attempt in range(retries):
+        if verbose:
+            again = f", retry {attempt}" if attempt else ""
+            print(f"  [dfs] POST {endpoint}  ({len(payload)} task(s), "
+                  f"billed{again})")
+
+        try:
+            resp = requests.post(f"{BASE}/{endpoint.lstrip('/')}",
+                                 auth=(login, password), json=payload,
+                                 timeout=timeout)
+        except requests.RequestException as exc:
+            if attempt + 1 < retries:
+                time.sleep(2 ** attempt)
+                continue
+            raise DataForSeoError(f"Could not reach DataForSEO: {exc}") from exc
+
+        if resp.status_code == 401:
+            raise DataForSeoError("DataForSEO rejected the login. Check "
+                                  "DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD.")
+        if resp.status_code >= 300:
+            raise DataForSeoError(f"DataForSEO returned {resp.status_code}: "
+                                  f"{resp.text[:300]}")
+
+        body = resp.json()
+        if body.get("status_code") not in (20000, None):
+            raise DataForSeoError(f"DataForSEO: {body.get('status_message')}")
+
+        out, failures, transient = [], [], False
+        for task in body.get("tasks") or []:
+            code = task.get("status_code")
+            if code != 20000:
+                failures.append(f"{code}: "
+                                f"{task.get('status_message', 'unknown error')}")
+                transient = transient or code in TRANSIENT_TASK_CODES
+                continue
+            out.extend(task.get("result") or [])
+
+        if out or not transient:
+            break
+        if attempt + 1 < retries:
             if verbose:
-                print(f"  [dfs] task failed: {message}")
-            continue
-        out.extend(task.get("result") or [])
+                print(f"  [dfs] {failures[0]} -- retrying")
+            time.sleep(2 ** attempt)
+
+    # If EVERY task was rejected, that is an error, not an empty result. This
+    # matters: a rejected request used to come back as "no listings found",
+    # which reads as a real answer on a client report. Silence and failure must
+    # never look the same.
+    if failures and not out:
+        raise DataForSeoError(
+            "DataForSEO rejected the request:\n  " + "\n  ".join(failures))
+    if failures and verbose:
+        print(f"  [dfs] {len(failures)} task(s) failed: {failures[0]}")
 
     try:
         path.write_text(json.dumps(out), encoding="utf-8")
@@ -163,17 +193,45 @@ def maps_search(keyword: str, *, latitude: float | None = None,
     return items
 
 
+# DataForSEO wants a location NAME for organic search, and its own spelling of
+# it. Enough of the common ones to cover where this tool gets used; anything
+# else needs competitors.location_name set in config.
+COUNTRY_BY_REGION = {
+    "GB": "United Kingdom", "US": "United States", "CA": "Canada",
+    "AU": "Australia", "NZ": "New Zealand", "IE": "Ireland",
+    "AE": "United Arab Emirates", "SA": "Saudi Arabia", "QA": "Qatar",
+    "KW": "Kuwait", "BH": "Bahrain", "OM": "Oman", "PK": "Pakistan",
+    "IN": "India", "ZA": "South Africa", "SG": "Singapore",
+    "MY": "Malaysia", "DE": "Germany", "FR": "France", "ES": "Spain",
+    "IT": "Italy", "NL": "Netherlands", "SE": "Sweden", "PL": "Poland",
+}
+
+
+def location_for(region_code: str) -> str:
+    return COUNTRY_BY_REGION.get((region_code or "").upper(), "")
+
+
 def organic_search(query: str, *, location_name: str = "",
                    language_code: str = "en", depth: int = 30,
                    verbose: bool = True) -> list[dict]:
-    """A plain Google search, used to find where a business is already listed."""
+    """A plain Google search, used to find where a business is already listed.
+
+    Unlike the maps endpoint, this one REQUIRES a location and rejects the task
+    without one. That rejection used to surface as an empty result, which read
+    as "this business has no directory listings" on a client report.
+    """
+    if not location_name:
+        raise DataForSeoError(
+            "A Google search needs a location, and none could be worked out "
+            "from the profile.\n  Set competitors.location_name in "
+            "config.yaml -- for example \"United Kingdom\".")
+
     task: dict[str, Any] = {
         "keyword": query,
         "language_code": language_code,
         "depth": depth,
+        "location_name": location_name,
     }
-    if location_name:
-        task["location_name"] = location_name
 
     results = post("serp/google/organic/live/advanced", [task], verbose=verbose)
     items: list[dict] = []
