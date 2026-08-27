@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
                  dashboard as dash,
-                 dataforseo as dfs, db, fix as fix_mod, holidays, images,
+                 clock, dataforseo as dfs, db, fix as fix_mod, holidays, images,
                  keywords as kw_mod, llm, posts, profiles, report, reviews,
                  site as site_mod, watch)
 from gbp.api import ApiError, Client, split_location_id
@@ -149,6 +149,20 @@ def cmd_doctor(args) -> int:
         mark = "set" if node else "EMPTY -- replies and posts will be generic"
         print(f"  {key + ' ':.<23} {mark}")
         ok = ok and bool(node)
+
+    # Checked before anything else touches Google: a clock that is out makes
+    # every sign-in fail with `invalid_grant`, which reads as an OAuth problem
+    # and sends you looking in entirely the wrong place.
+    verdict = clock.check()
+    if not verdict["checked"]:
+        print("  system clock ........... could not check (offline?)")
+    elif verdict["ok"]:
+        print(f"  system clock ........... ok ({verdict['skew']:+.0f}s)")
+    else:
+        print(f"  system clock ........... WRONG ({verdict['skew']:+.0f}s)\n")
+        print("  " + verdict["message"].replace("\n", "\n  "))
+        print()
+        ok = False
 
     print(f"  client_secret.json ..... "
           f"{'found' if config.CLIENT_SECRET_PATH.exists() else 'MISSING'}")

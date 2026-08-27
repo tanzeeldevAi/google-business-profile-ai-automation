@@ -49,8 +49,16 @@ export type ProfileSettings = {
   holidays?: { region_code?: string };
 };
 
+export type Clock = {
+  checked: boolean;
+  skew: number | null;
+  ok: boolean;
+  message: string;
+};
+
 export type Status = {
   configured: boolean;
+  clock: Clock;
   google: {
     signed_in: boolean;
     token_age_days: number | null;

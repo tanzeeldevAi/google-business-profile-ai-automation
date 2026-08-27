@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gbp import auth, config, db, profiles  # noqa: E402
+from gbp import auth, clock, config, db, profiles  # noqa: E402
 from gbp.api import ApiError, Client, split_location_id  # noqa: E402
 from gbp.auth import AuthError  # noqa: E402
 
@@ -253,6 +253,9 @@ def status(request: Request) -> dict:
     llm_cfg = (c.get("llm", {}) or {})
     return {
         "configured": bool(c),
+        # Surfaced on every page load. A wrong clock breaks sign-in with an
+        # error that names OAuth and never mentions time.
+        "clock": clock.check(timeout=5),
         "google": {
             "signed_in": age is not None,
             "token_age_days": round(age, 1) if age is not None else None,

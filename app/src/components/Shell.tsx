@@ -108,6 +108,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
 
+          {status?.clock && !status.clock.ok && (
+            <Banner tone="bad">
+              <strong>This machine&apos;s clock is wrong.</strong> Sign-in will
+              fail with <code>invalid_grant</code> until it is fixed — Google
+              signs its codes against real time.
+              <span className="block mt-1 opacity-90 whitespace-pre-wrap font-mono text-xs">
+                {status.clock.message.split("\n").slice(1).join("\n").trim()}
+              </span>
+            </Banner>
+          )}
           {status && !status.google.signed_in && (
             <Banner tone="bad">
               Not signed in to Google.{" "}

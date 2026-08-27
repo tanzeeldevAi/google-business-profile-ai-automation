@@ -172,10 +172,50 @@ def auth_url(redirect_uri: str, state: str) -> str:
 
 
 def exchange(code: str, redirect_uri: str) -> Credentials:
-    """Swap the callback's code for credentials, and save them."""
+    """Swap the callback's code for credentials, and save them.
+
+    Google's rejections here are terse and all look the same from the outside,
+    so they are translated into the thing you actually have to go and do.
+    """
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES,
                                    redirect_uri=redirect_uri)
-    flow.fetch_token(code=code)
+    try:
+        flow.fetch_token(code=code)
+    except Exception as exc:
+        detail = str(exc)
+        # oauthlib puts Google's JSON body on the exception; pull the useful
+        # part out rather than showing the whole traceback.
+        if "invalid_grant" in detail:
+            raise AuthError(
+                "Google rejected the sign-in code (invalid_grant).\n\n"
+                "  This almost always means one of:\n"
+                "   1. The code was already used. Each sign-in link works ONCE "
+                "-- do not reload\n      the callback page or press back. Start "
+                "again from Connect.\n"
+                "   2. The link sat unused for more than a few minutes.\n"
+                "   3. This machine's clock is wrong. Google signs the code "
+                "against real time,\n      so even a couple of minutes of drift "
+                "fails. Check Windows time sync.\n"
+                "   4. Your Google account is not a Test User on the OAuth "
+                "consent screen,\n      while that screen is still in Testing "
+                "mode.\n\n"
+                f"  Google said: {detail[:300]}") from exc
+        if "invalid_client" in detail:
+            raise AuthError(
+                "Google did not recognise this app (invalid_client).\n"
+                "  data/client_secret.json does not match the OAuth client in "
+                "Cloud Console.\n"
+                f"  Google said: {detail[:200]}") from exc
+        if "redirect_uri_mismatch" in detail:
+            raise AuthError(
+                f"Google refused the redirect address {redirect_uri}.\n"
+                "  The OAuth client must be a DESKTOP type, which accepts any "
+                "loopback port.\n"
+                "  A Web application client would need this exact URI "
+                "registered.\n"
+                f"  Google said: {detail[:200]}") from exc
+        raise AuthError(f"Could not complete the sign-in: {detail[:400]}") from exc
+
     creds = flow.credentials
     if not creds.refresh_token:
         # Without one the login dies at the first expiry and cannot renew.
