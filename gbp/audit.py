@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from . import rules
+from . import rules, site as site_mod
 from .api import ApiError, Client, split_location_id
 from .rules import CATEGORY_LABELS, Finding, Snapshot
 
@@ -98,9 +98,18 @@ def score_findings(findings: list[Finding]) -> tuple[int, dict[str, dict]]:
 
 
 def fetch_snapshot(client: Client, account: str, location_name: str,
-                   *, verbose: bool = True) -> tuple[Snapshot, list[str]]:
-    """Pull everything we are allowed to see. Returns the snapshot and a list
-    of human-readable reasons for anything we had to skip."""
+                   *, verbose: bool = True, cfg: dict | None = None,
+                   fetch_site: bool = True
+                   ) -> tuple[Snapshot, list[str], "site_mod.Site | None"]:
+    """Pull everything we are allowed to see.
+
+    Returns the snapshot, a list of human-readable reasons for anything we had
+    to skip, and the business's own website when we could read it.
+
+    The website is fetched automatically from the profile's websiteUri, which
+    is what lets the description writer and the post writer use the company's
+    real words instead of a category label.
+    """
     location_id = split_location_id(location_name)
     skipped: list[str] = []
     available: set[str] = set()
@@ -158,13 +167,31 @@ def fetch_snapshot(client: Client, account: str, location_name: str,
         say(f"performance ... skipped -- {reason}")
         performance = {}
 
+    # The business's own website. Never fatal: a site that is down or slow
+    # must not stop an audit, so a failure is recorded and the run continues.
+    site_data = None
+    site_summary: dict = {}
+    if fetch_site:
+        try:
+            site_data = site_mod.load(cfg or {}, location.get("websiteUri", ""),
+                                      verbose=verbose)
+            site_summary = site_mod.to_snapshot_dict(site_data)
+            if site_summary.get("ok") or site_data.services:
+                available.add("site")
+            else:
+                skipped.append("website (" + (site_summary.get("error")
+                                              or "nothing readable") + ")")
+        except Exception as exc:
+            skipped.append(f"website (error: {type(exc).__name__})")
+            say(f"site .......... skipped -- {exc}")
+
     snap = Snapshot(
         location=location, reviews=reviews, posts=posts, media=media,
         questions=questions, performance=performance, attributes=attributes,
-        place_actions=place_actions, available=available,
+        place_actions=place_actions, site=site_summary, available=available,
         now=datetime.now(timezone.utc),
     )
-    return snap, skipped
+    return snap, skipped, site_data
 
 
 def audit(snapshot: Snapshot, cfg: dict | None = None,

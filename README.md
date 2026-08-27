@@ -2,7 +2,7 @@
 
 # GBP Autopilot — Audit, Fix and Run a Google Business Profile
 
-**Scores a Google Business Profile against 39 local SEO rules, writes a client-ready report,
+**Scores a Google Business Profile against 42 local SEO rules, writes a client-ready report,
 fixes what it can through the API, answers every review, posts weekly, sets holiday hours, and
 tells you the moment Google changes something behind your back.**
 
@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-207%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-293%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -30,11 +30,15 @@ This finds all of it, tells you what it costs in plain words, and then does the 
 can legitimately do.
 
 ```
-    audit  ──►  report  ──►  fix        (description, holiday hours)
-      │                 └──►  reviews    (reply to every one)
-      │                 └──►  post       (weekly, with an image)
-      └──►  watch                        (tell me when Google changes something)
+  their website ──┐
+                  ├──► audit ──► report ──► fix      (description, holiday hours)
+  their profile ──┘        │            └──► reviews  (reply to every one)
+                           │            └──► post     (from a service page you name)
+                           └──► watch              (Google changed something)
 ```
+
+Connect a profile and it reads the business's own website too, so everything it writes uses their
+real service names and real wording rather than a category label.
 
 **Everything that writes is a dry run unless you add `--apply`.** You always see the exact before
 and after first.
@@ -43,7 +47,7 @@ and after first.
 
 ## What it checks
 
-39 rules across ten areas, each weighted by what it actually costs you:
+42 rules across eleven areas, each weighted by what it actually costs you:
 
 | | |
 |---|---|
@@ -56,6 +60,7 @@ and after first.
 | ⭐ **Reviews** | Count, rating, **response rate**, nothing left waiting, still coming in |
 | 📣 **Posts** | Posted in the last 7 days, posting regularly, every post has a button |
 | ❓ **Q&A** | Nothing unanswered, common questions seeded by the owner |
+| 🌐 **Website** | Reachable, the profile's phone actually appears on it, LocalBusiness schema present |
 | 📈 **Performance** | 90 days of views and actions from Google's own data |
 
 Each finding says what was found, **why Google cares**, and **what to do about it**. That is what
@@ -75,6 +80,7 @@ makes the report worth sending to a prospect rather than just reading yourself.
 | `run.py reviews` | Replies to unanswered reviews in the owner's voice. Low-star reviews are **held for a human** by default |
 | `run.py post` | Writes and publishes a Google Post, rotating through the services on the profile |
 | `run.py watch` | Fingerprints the profile and reports anything that changed since last time |
+| `run.py site` | Shows what was read from the business's own website |
 
 **It never invents a fact.** The description and posts are built only from what is already on the
 profile plus the `facts` you list in `config.yaml`. It will not claim a founding year, a
@@ -148,11 +154,12 @@ writer may take claims from, so keep every line true and checkable.
 ### Step 4 — Prove it works before touching a live profile
 
 ```bash
-python test/test_rules.py     # 130 checks: every rule, on a good profile and a broken one
-python test/smoke_test.py     # 77 checks: audit, report, fixes, reviews, posts, watcher
+python test/test_rules.py     # 135 checks: every rule, on a good profile and a broken one
+python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
+python test/smoke_test.py     #  95 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**207 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**293 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -196,8 +203,11 @@ python run.py fix --apply         # write it
 python run.py reviews             # draft replies, show them, send nothing
 python run.py reviews --apply     # send them
 
-python run.py post                # write a post and show it
+python run.py post                # next service in the rotation, shown not sent
+python run.py post --url https://yoursite.com/services/boiler-repair/
 python run.py post --apply        # publish it
+
+python run.py site                # what was read from the website
 
 python run.py watch               # what changed since last time
 python run.py daily --apply       # watch + audit + reviews, in order
@@ -210,6 +220,66 @@ python run.py daily --apply       # watch + audit + reviews, in order
 ```
 
 ---
+
+## Posting about specific services, from your own pages
+
+By default posts rotate through the services listed on the Google profile. That works, but the
+writer only has a service *name* to go on.
+
+Give it your service page URLs instead and it gets the real thing:
+
+```yaml
+website:
+  service_pages:
+    - "https://northgateplumbing.co.uk/services/boiler-repair/"
+    - "https://northgateplumbing.co.uk/services/blocked-drains/"
+    - "https://northgateplumbing.co.uk/services/bathroom-installation/"
+```
+
+Now posts rotate through **only those services**, one per run, least recently used first, and each
+post is written **from that page**: the same scope, the same inclusions, the same process, the same
+areas, the same names for things.
+
+```bash
+python run.py post                      # next service in the rotation
+python run.py post --url https://...    # post about this one specifically
+```
+
+**The details have to match the page.** That is enforced, not just asked for:
+
+- Every number in the draft is checked against the source page and your confirmed `facts`.
+- A price, timeframe, percentage or quantity that is not there gets the post **rewritten without
+  it** — not swapped for a different invented number.
+- After three attempts it **refuses to publish** and tells you why. `--force` overrides, if you
+  have read it and you are happy.
+
+The source page also feeds the image prompt, so the picture reflects what that job actually
+involves rather than a generic stock scene.
+
+## Reading the website
+
+When you connect a profile, its website is fetched automatically from the `websiteUri` already on
+the profile. Nothing to configure.
+
+That one step does three things:
+
+1. **The description rewrite** uses the company's real wording and real service names, instead of
+   a category label.
+2. **Posts** are grounded in the business's own copy even when no service pages are listed.
+3. **Three extra audit checks** become possible: is the site reachable at all, does the phone
+   number on the profile actually appear on the site (a NAP mismatch is a real ranking problem),
+   and does the site carry LocalBusiness schema.
+
+See exactly what was read — this is worth running once per client, so you know the writer has good
+source material rather than hoping:
+
+```bash
+python run.py site
+python run.py site --refresh     # ignore the cache
+```
+
+Pages are cached for a week so a daily run does not hammer a client's server. If the site sits
+behind Cloudflare and returns 403, set `website.user_agent` in `config.yaml`.
 
 ## Post images
 
@@ -334,18 +404,19 @@ run.py               the CLI
 gbp/
   auth.py            OAuth, token refresh, and the 7-day Testing-mode trap
   api.py             the Business Profile APIs, across all six hosts
-  rules.py           THE RULE SET. 39 local SEO rules, each with why and fix
+  rules.py           THE RULE SET. 42 local SEO rules, each with why and fix
   audit.py           fetches a snapshot, runs the rules, scores it
   report.py          the client-facing HTML report
   fix.py             applies what can be applied, dry-run first
   reviews.py         drafting and sending review replies
   posts.py           writing and publishing Google Posts
   images.py          post images, and where they may not go
+  site.py            reads the business's own website, and the grounding guard
   holidays.py        which holidays are coming, and which it refuses to guess
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                207 offline checks
+test/                293 offline checks
 ```
 
 ---

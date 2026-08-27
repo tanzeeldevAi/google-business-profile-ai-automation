@@ -92,6 +92,28 @@ def build_prompt(service: str, city: str, extra: str = "") -> str:
     return " ".join(b for b in bits if b)
 
 
+def detail_from_page(page) -> str:
+    """Turn a service page into a sentence of visual direction.
+
+    A prompt that says "boiler repair" produces a generic stock scene. The same
+    prompt plus what the page actually describes -- the equipment, the setting,
+    the kind of property -- produces something that looks like this business's
+    work rather than anyone's.
+
+    Only nouns from the page are used. No claim is made in an image.
+    """
+    if page is None or not getattr(page, "ok", False):
+        return ""
+    bits: list[str] = []
+    heading = getattr(page, "h1", "") or getattr(page, "title", "")
+    if heading:
+        bits.append(f"The work shown is: {heading}.")
+    subs = [h for h in (getattr(page, "headings", []) or [])[:6] if len(h) < 70]
+    if subs:
+        bits.append("Include details suggesting: " + "; ".join(subs) + ".")
+    return " ".join(bits)
+
+
 def _slug(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s[:60] or "post"

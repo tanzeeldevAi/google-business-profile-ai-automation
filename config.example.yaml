@@ -53,6 +53,58 @@ business:
 
 
 # -----------------------------------------------------------------------------
+# THE WEBSITE
+#
+# When a profile is connected, its website is fetched automatically and used as
+# source material. That is what lets the description, the posts and the image
+# prompts use the business's real service names and real wording instead of a
+# category label and a guess.
+#
+# SERVICE PAGES -- the important bit.
+#
+# List the URLs of the services you actually want posted about. Posts then
+# rotate through ONLY those pages, one at a time, least recently used first,
+# and each post is written FROM that page:
+#
+#   * the service is described the way the page describes it
+#   * scope, inclusions, process and area come from the page
+#   * a number that is not on the page (a price, a timeframe, a percentage)
+#     is rejected and the post is rewritten without it
+#   * after three attempts it refuses to publish rather than invent
+#
+# Leave `service_pages` empty and it discovers likely service pages from the
+# sitemap instead. Posts still rotate, they are just less targeted.
+#
+# Run `python run.py site` to see exactly which pages were read and what the
+# writer is being given.
+# -----------------------------------------------------------------------------
+website:
+  auto_fetch: true
+  # Blank uses the website linked on the Google profile. Set it only to
+  # override, e.g. when the profile points at a booking portal.
+  url: ""
+
+  service_pages: []
+  #  - "https://northgateplumbing.co.uk/services/boiler-repair/"
+  #  - "https://northgateplumbing.co.uk/services/blocked-drains/"
+  #  - "https://northgateplumbing.co.uk/services/bathroom-installation/"
+
+  # Only used when service_pages is empty -- how many to discover.
+  max_service_pages: 8
+
+  # Pages are cached so a daily run does not hammer the client's server.
+  # `run.py site --refresh` re-fetches on demand.
+  cache_hours: 168
+  timeout_seconds: 20
+
+  # Some sites sit behind Cloudflare and refuse anything that identifies
+  # itself as a bot, which is what the default does. This is normally your own
+  # client's website, so if `run.py site` reports a 403, put a normal browser
+  # user agent here.
+  user_agent: ""
+
+
+# -----------------------------------------------------------------------------
 # WRITING
 #
 #   backend: claude  -> uses the `claude` CLI you are already signed into, so

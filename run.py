@@ -22,7 +22,8 @@ import traceback
 from datetime import datetime, timezone
 
 from gbp import (api, audit as audit_mod, auth, config, db, fix as fix_mod,
-                 holidays, images, llm, posts, report, reviews, watch)
+                 holidays, images, llm, posts, report, reviews, site as site_mod,
+                 watch)
 from gbp.api import ApiError, Client, split_location_id
 from gbp.auth import AuthError
 
@@ -79,13 +80,22 @@ def _resolve(client: Client, cfg: dict, args) -> tuple[str, str]:
     raise SystemExit(1)
 
 
-def _snapshot(client: Client, cfg: dict, args, *, verbose: bool = True):
+def _snapshot(client: Client, cfg: dict, args, *, verbose: bool = True,
+              fetch_site: bool = True):
+    """Read the profile and its website.
+
+    Returns account, location, snapshot, what was skipped, and the site
+    content (or None). The website comes from the profile's own websiteUri, so
+    connecting a profile is all it takes to ground the writing in the
+    business's real words.
+    """
     account, location = _resolve(client, cfg, args)
     if verbose:
         print(f"\n  Reading {location}\n")
-    snap, skipped = audit_mod.fetch_snapshot(client, account, location,
-                                             verbose=verbose)
-    return account, location, snap, skipped
+    snap, skipped, site_data = audit_mod.fetch_snapshot(
+        client, account, location, verbose=verbose, cfg=cfg,
+        fetch_site=fetch_site)
+    return account, location, snap, skipped, site_data
 
 
 # ------------------------------------------------------------------- commands
@@ -190,7 +200,7 @@ def cmd_audit(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, skipped = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
 
     result = audit_mod.audit(snap, cfg, skipped)
     audit_mod.print_summary(result)
@@ -211,11 +221,11 @@ def cmd_fix(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, skipped = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
 
     result = audit_mod.audit(snap, cfg, skipped)
     only = args.only.split(",") if args.only else None
-    fixes = fix_mod.plan(result, snap, cfg, only=only)
+    fixes = fix_mod.plan(result, snap, cfg, only=only, site_data=site_data)
     fix_mod.show(fixes)
     if fixes:
         fix_mod.apply(fixes, client, location, dry_run=not args.apply)
@@ -249,22 +259,51 @@ def cmd_post(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, _ = _snapshot(client, cfg, args, verbose=False)
+    account, location, snap, _sk, site_data = _snapshot(
+        client, cfg, args, verbose=False)
 
     draft = posts.plan(snap, location, cfg, topic=args.topic,
-                       with_image=not args.no_image)
+                       with_image=not args.no_image, site_data=site_data,
+                       url=args.url)
     posts.show(draft)
     posts.apply(draft, client, account, location, split_location_id(location),
-                dry_run=not args.apply,
+                dry_run=not args.apply, force=args.force,
                 language=cfg.get("posts", {}).get("language", "en"))
     return 0
+
+
+def cmd_site(args) -> int:
+    """Show exactly what was read from the business's website.
+
+    Worth running once when you connect a profile: it is the difference between
+    trusting that the writer has good source material and knowing it does.
+    """
+    cfg = config.load(args.config)
+    website = cfg.get("website", {}).get("url", "")
+
+    if not website and not args.url:
+        client = _client(cfg)
+        _account, location = _resolve(client, cfg, args)
+        loc = client.location(location, read_mask="name,title,websiteUri")
+        website = loc.get("websiteUri", "")
+        if not website:
+            print("\n  This profile has no website linked, and none is set in "
+                  "config.yaml\n  under website.url. Nothing to read.\n")
+            return 1
+        print(f"\n  Website on the profile: {website}")
+
+    site_data = site_mod.load(cfg, args.url or website, force=args.refresh,
+                              verbose=True)
+    site_mod.show(site_data)
+    return 0 if site_data.ok else 1
 
 
 def cmd_watch(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg)
-    account, location, snap, _ = _snapshot(client, cfg, args, verbose=False)
+    account, location, snap, _sk, site_data = _snapshot(
+        client, cfg, args, verbose=False)
 
     first = db.last_snapshot(location) is None
     changes = watch.run(snap, location)
@@ -277,7 +316,7 @@ def cmd_daily(args) -> int:
     cfg = config.load(args.config)
     db.init()
     client = _client(cfg, interactive=False)
-    account, location, snap, skipped = _snapshot(client, cfg, args)
+    account, location, snap, skipped, site_data = _snapshot(client, cfg, args)
     location_id = split_location_id(location)
 
     print("\n== 1. what changed ==")
@@ -306,7 +345,8 @@ def cmd_daily(args) -> int:
     if args.with_post:
         print("\n== 4. post ==")
         try:
-            draft = posts.plan(snap, location, cfg, with_image=not args.no_image)
+            draft = posts.plan(snap, location, cfg, with_image=not args.no_image,
+                               site_data=site_data)
             posts.show(draft)
             posts.apply(draft, client, account, location, location_id,
                         dry_run=not args.apply)
@@ -411,7 +451,18 @@ def main() -> int:
 
     p = add("post", cmd_post, "write and publish a Google Post", apply_flag=True)
     p.add_argument("--topic", help="force the topic instead of rotating")
+    p.add_argument("--url", help="write the post from this service page URL")
     p.add_argument("--no-image", action="store_true", help="text-only post")
+    p.add_argument("--force", action="store_true",
+                   help="publish even if the post could not be kept inside "
+                        "its source page")
+
+    p = sub.add_parser("site", help="show what was read from the website")
+    p.set_defaults(func=cmd_site)
+    p.add_argument("--location", help="locations/12345, or its number")
+    p.add_argument("--url", help="read this site instead of the profile's")
+    p.add_argument("--refresh", action="store_true",
+                   help="re-fetch instead of using the cache")
 
     add("watch", cmd_watch, "report what changed since the last check")
 

@@ -247,6 +247,106 @@ posts.apply(draft, fc3, "accounts/1", LOC, "111", dry_run=False)
 check("apply publishes the post", len(fc3.posts) == 1)
 
 print("\n" + "=" * 68)
+print("6b. POSTS FROM SERVICE PAGES")
+
+from gbp import site as site_mod  # noqa: E402
+
+PAGE_TEXT = ("We repair gas and combi boilers across Durham. Most repairs are "
+             "finished in a single visit. The call-out fee is 65 pounds and is "
+             "deducted from the repair if you go ahead. We cover Durham, "
+             "Chester-le-Street and Spennymoor.")
+
+
+def page(url, h1, text=PAGE_TEXT):
+    return site_mod.Page(url=url, h1=h1, title=h1, text=text,
+                         headings=["What is included", "Areas we cover"])
+
+
+P1 = "https://example.com/services/boiler-repair"
+P2 = "https://example.com/services/blocked-drains"
+SITE = site_mod.Site(
+    base_url="https://example.com",
+    home=page("https://example.com", "Northgate Plumbing"),
+    services={P1: page(P1, "Boiler Repair in Durham"),
+              P2: page(P2, "Blocked Drains in Durham")},
+)
+
+LOC2 = "locations/444"
+
+# Topic selection must come from the service pages, not the profile services.
+label, chosen = posts.choose_target(good_snapshot(), LOC2, CFG, SITE)
+check("topic comes from a service page when URLs are configured",
+      chosen is not None and chosen.url in (P1, P2), str(label))
+check("the topic label is the page heading", "Durham" in label, label)
+
+# Rotation: once one page is used, the next pick must be the other one.
+db.record_action(LOC2, "post", P1, "first post")
+_label2, chosen2 = posts.choose_target(good_snapshot(), LOC2, CFG, SITE)
+check("the rotation moves to the page that has not been used",
+      chosen2 is not None and chosen2.url == P2,
+      chosen2.url if chosen2 else "none")
+
+# A post written from a page carries the source and is grounded.
+draft_p = posts.plan(good_snapshot(), LOC2, CFG, with_image=False,
+                     site_data=SITE, url=P1)
+check("an explicit --url is used as the source", draft_p.source_url == P1,
+      str(draft_p.source_url))
+check("the topic comes from that page", "Boiler Repair" in draft_p.topic,
+      draft_p.topic)
+check("a grounded post has no problems", draft_p.problems == [],
+      str(draft_p.problems))
+
+# Now the important one: a model that invents a number must not get published.
+def stub_invents(prompt, *, system="", cfg=None, model=None, retries=2):
+    return ("We have completed over 4,200 boiler repairs across Durham with a "
+            "98% first-time fix rate.")
+
+
+llm.generate = stub_invents
+bad_draft = posts.plan(good_snapshot(), LOC2, CFG, with_image=False,
+                       site_data=SITE, url=P1)
+check("an invented number is caught", bool(bad_draft.problems),
+      str(bad_draft.problems))
+check("the problem names the numbers",
+      any("4,200" in p or "98" in p for p in bad_draft.problems),
+      str(bad_draft.problems))
+
+fc4 = FakeClient()
+published = posts.apply(bad_draft, fc4, "accounts/1", LOC2, "444",
+                        dry_run=False)
+check("an ungrounded post is NOT published", not published and not fc4.posts)
+published = posts.apply(bad_draft, fc4, "accounts/1", LOC2, "444",
+                        dry_run=False, force=True)
+check("--force publishes it anyway", published and len(fc4.posts) == 1)
+
+# A number that IS on the page must survive.
+def stub_grounded(prompt, *, system="", cfg=None, model=None, retries=2):
+    return ("If your boiler has stopped, the call-out fee is 65 pounds and "
+            "comes off the repair. Most jobs are done in one visit.")
+
+
+llm.generate = stub_grounded
+ok_draft = posts.plan(good_snapshot(), LOC2, CFG, with_image=False,
+                      site_data=SITE, url=P1)
+check("a number taken from the page is allowed", ok_draft.problems == [],
+      str(ok_draft.problems))
+
+# Publishing records against the URL, so the rotation knows.
+fc5 = FakeClient()
+posts.apply(ok_draft, fc5, "accounts/1", LOC2, "444", dry_run=False)
+check("a published post is recorded against its source URL",
+      db.already_done(LOC2, "post", P1))
+
+# With no site at all, it falls back to the profile's own services.
+llm.generate = stub_generate
+fallback = posts.plan(good_snapshot(), "locations/555", CFG, with_image=False,
+                      site_data=None)
+check("with no website it still writes a post", bool(fallback.text))
+check("with no website there is no source URL", fallback.source_url is None)
+
+llm.generate = stub_generate
+
+print("\n" + "=" * 68)
 print("7. IMAGES (no network)")
 prompt = images.build_prompt("Boiler repair", "Durham")
 check("image prompt names the service", "boiler repair" in prompt.lower())
@@ -254,6 +354,16 @@ check("image prompt names the city", "Durham" in prompt)
 check("image prompt forbids text in the image", "no text" in prompt.lower())
 check("images are off by default in this config",
       images.generate("x", "y", "z", CFG) is None)
+
+detail = images.detail_from_page(page(P1, "Boiler Repair in Durham"))
+check("a source page gives the image prompt real direction",
+      "Boiler Repair in Durham" in detail, detail)
+check("the image prompt picks up the page's sections",
+      "What is included" in detail, detail)
+check("no page means no extra direction", images.detail_from_page(None) == "")
+enriched = images.build_prompt("Boiler repair", "Durham", detail)
+check("the enriched prompt still forbids text in the image",
+      "no text" in enriched.lower())
 
 print("\n" + "=" * 68)
 print("8. WATCH")

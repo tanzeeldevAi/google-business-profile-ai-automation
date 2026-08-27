@@ -3,6 +3,9 @@ google-auth>=2.28
 google-auth-oauthlib>=1.2
 requests>=2.31
 
+# Reading the business's own website
+beautifulsoup4>=4.12
+
 # Config
 PyYAML>=6.0
 python-dotenv>=1.0

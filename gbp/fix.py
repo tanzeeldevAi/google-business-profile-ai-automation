@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from . import db, holidays, llm
+from . import db, holidays, llm, site
 from .api import Client
 from .audit import AuditResult
 from .rules import Snapshot
@@ -57,7 +57,8 @@ Hard rules, all enforced by Google or by the reader:
 Write in the third person, as the business. Output the description only."""
 
 
-def _description_facts(snap: Snapshot, cfg: dict) -> str:
+def _description_facts(snap: Snapshot, cfg: dict,
+                       site_data: "site.Site | None" = None) -> str:
     loc = snap.location
     cat = snap.primary_category.get("displayName", "")
     extra = [c.get("displayName", "") for c in snap.additional_categories]
@@ -87,12 +88,27 @@ def _description_facts(snap: Snapshot, cfg: dict) -> str:
         lines.append("\nExtra facts the owner has confirmed as true "
                      "(you may use these, and nothing beyond them):")
         lines += [f"- {f}" for f in owner]
+
+    # The business's own website, when we could read it. This is what lets the
+    # description use the company's real vocabulary and real service names
+    # instead of a category label and a guess.
+    if site_data is not None and site_data.ok:
+        block = site.business_block(site_data)
+        if block:
+            lines.append("\nThe business's own website says the following. "
+                         "You may use anything factual from it, and nothing "
+                         "beyond it:\n" + block)
+        if site_data.services:
+            names = [p.h1 or p.title for p in site_data.services.values()]
+            lines.append("\nService pages on the website: "
+                         + "; ".join(n for n in names if n))
     return "\n".join(lines)
 
 
-def plan_description(snap: Snapshot, cfg: dict) -> Fix | None:
+def plan_description(snap: Snapshot, cfg: dict,
+                     site_data: "site.Site | None" = None) -> Fix | None:
     before = snap.get("profile.description", "") or ""
-    facts = _description_facts(snap, cfg)
+    facts = _description_facts(snap, cfg, site_data)
     prompt = (
         f"Write a Google Business Profile description from these facts.\n\n"
         f"{facts}\n\n"
@@ -135,7 +151,8 @@ def _period_for(day: date, closed: bool, open_h: int, close_h: int) -> dict:
     return p
 
 
-def plan_holiday_hours(snap: Snapshot, cfg: dict) -> Fix | None:
+def plan_holiday_hours(snap: Snapshot, cfg: dict,
+                       site_data: "site.Site | None" = None) -> Fix | None:
     hcfg = cfg.get("holidays", {}) or {}
     region = snap.region_code or hcfg.get("region_code", "")
     if not region:
@@ -199,7 +216,8 @@ PLANNERS = {
 
 
 def plan(result: AuditResult, snap: Snapshot, cfg: dict,
-         only: list[str] | None = None) -> list[Fix]:
+         only: list[str] | None = None,
+         site_data: "site.Site | None" = None) -> list[Fix]:
     """Build a fix for each failing rule that declares itself auto-fixable."""
     wanted: list[str] = []
     for f in result.failures:
@@ -211,7 +229,7 @@ def plan(result: AuditResult, snap: Snapshot, cfg: dict,
     fixes: list[Fix] = []
     for key in wanted:
         try:
-            fix = PLANNERS[key](snap, cfg)
+            fix = PLANNERS[key](snap, cfg, site_data)
         except llm.LLMError as exc:
             print(f"  ! could not plan '{key}': {exc}")
             continue

@@ -52,6 +52,7 @@ CATEGORY_LABELS = {
     "reviews": "Reviews",
     "posts": "Google Posts",
     "qanda": "Questions and answers",
+    "website": "Website",
     "performance": "Performance",
 }
 
@@ -99,12 +100,15 @@ class Snapshot:
     performance: dict[str, Any] = field(default_factory=dict)
     attributes: dict[str, Any] = field(default_factory=dict)
     place_actions: list[dict] = field(default_factory=list)
+    # A flat summary of the business's own website, from site.py. Kept as a
+    # plain dict so a Snapshot stays JSON-shaped and easy to build in a test.
+    site: dict[str, Any] = field(default_factory=dict)
     # Which sections we could actually fetch. A section we could not read is
     # reported as unknown, never as a failure -- telling a client their photos
     # are missing when we simply could not look would be worse than useless.
     available: set[str] = field(default_factory=lambda: {
         "location", "reviews", "posts", "media", "questions", "performance",
-        "place_actions"})
+        "place_actions", "site"})
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # ---------------------------------------------------------- small helpers
@@ -955,6 +959,89 @@ def q2_seeded_questions(s: Snapshot, cfg: dict) -> Finding:
         fix=f"Seed at least {want} real questions customers ask -- pricing, "
             "call-out areas, emergency availability, guarantees -- and answer each "
             "from the business account.",
+    )
+
+
+# ===================================================================== website
+
+def _digits(text: str) -> str:
+    return re.sub(r"\D", "", text or "")
+
+
+@rule
+def w1_site_reachable(s: Snapshot, cfg: dict) -> Finding:
+    if "site" not in s.available:
+        return _unknown("W1", "Website is reachable", "website", "the website")
+    ok = bool(s.site and s.site.get("ok"))
+    note = (s.site or {}).get("error", "")
+    return Finding(
+        "W1", "Website is reachable", "high", "website", ok,
+        detail="The linked website loads and has readable content." if ok else
+               f"Could not read the linked website{(' -- ' + note) if note else '.'}",
+        why="Google follows the link on your profile. A site that is down, "
+            "blocked, or renders only through JavaScript gives Google nothing "
+            "to connect the profile to, and gives a customer who clicks nothing "
+            "at all.",
+        fix="Check the site loads for a logged-out visitor. If the content only "
+            "appears after JavaScript runs, get the important text server-"
+            "rendered -- crawlers and previews often will not wait.",
+    )
+
+
+@rule
+def w2_phone_matches(s: Snapshot, cfg: dict) -> Finding:
+    if "site" not in s.available or not (s.site or {}).get("ok"):
+        return _unknown("W2", "Phone matches the website", "website",
+                        "the website")
+    profile_phone = _digits(s.get("phoneNumbers.primaryPhone", ""))
+    site_phones = [_digits(p) for p in (s.site.get("phones") or [])]
+    if not profile_phone:
+        return _unknown("W2", "Phone matches the website", "website",
+                        "the profile phone")
+    if not site_phones:
+        return Finding(
+            "W2", "Phone matches the website", "medium", "website", False,
+            detail="No phone number was found anywhere on the website.",
+            why="NAP consistency -- the same name, address and phone everywhere "
+                "-- is one of the things Google uses to decide a business is "
+                "real. A site with no visible number also loses the calls.",
+            fix="Put the same number that is on the profile in the site header "
+                "and footer, as click-to-call on mobile.",
+        )
+    # Compare on the last 9 digits so +44 191 555 0142 and 0191 555 0142 match.
+    tail = profile_phone[-9:]
+    ok = any(tail and tail in p for p in site_phones)
+    return Finding(
+        "W2", "Phone matches the website", "high", "website", ok,
+        detail="The profile number appears on the website." if ok else
+               f"The profile number ({s.get('phoneNumbers.primaryPhone')}) does "
+               f"not appear on the website. Found instead: "
+               f"{', '.join((s.site.get('phones') or [])[:3])}",
+        why="A different number on the site and the profile is a NAP "
+            "inconsistency. Google treats mismatched details as a sign the "
+            "listing may be stale or wrong, and it damages map pack ranking.",
+        fix="Make them the same. If one is a call-tracking number, put the "
+            "tracking number on the WEBSITE and keep the real number on the "
+            "profile and every citation -- never the other way round.",
+    )
+
+
+@rule
+def w3_local_schema(s: Snapshot, cfg: dict) -> Finding:
+    if "site" not in s.available or not (s.site or {}).get("ok"):
+        return _unknown("W3", "Website has LocalBusiness schema", "website",
+                        "the website")
+    ok = bool(s.site.get("has_local_schema"))
+    return Finding(
+        "W3", "Website has LocalBusiness schema", "medium", "website", ok,
+        detail="LocalBusiness structured data found." if ok else
+               "No LocalBusiness structured data on the home page.",
+        why="Schema tells Google explicitly what the business is, where it is "
+            "and how to reach it, instead of leaving it to be inferred. It is "
+            "the cheapest way to reinforce everything on the profile.",
+        fix="Add LocalBusiness JSON-LD to the home page with the same name, "
+            "address, phone, hours and URL as the Google profile. The details "
+            "must match the profile exactly, or it works against you.",
     )
 
 
