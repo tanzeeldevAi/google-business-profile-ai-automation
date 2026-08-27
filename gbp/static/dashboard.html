@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GBP Autopilot</title>
+<style>
+:root{
+  --bg:#0F1115; --panel:#171A21; --panel-2:#1D212A; --line:#2A2F3A;
+  --ink:#E8EAEE; --ink-2:#A2ABB8; --ink-3:#6C7685;
+  --accent:#7C9CF5; --ok:#4ADE80; --warn:#FBBF24; --bad:#F87171;
+  --write:#F0A868;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+a{color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 60px}
+
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  padding:22px 0 18px;border-bottom:1px solid var(--line);margin-bottom:22px}
+.brand{font-weight:700;font-size:17px;letter-spacing:-.01em}
+.brand span{color:var(--ink-3);font-weight:400}
+.who{color:var(--ink-2);font-size:14px}
+.who b{color:var(--ink)}
+.spacer{flex:1 1 auto}
+
+.applybox{display:flex;align-items:center;gap:9px;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:7px 13px;font-size:14px}
+.applybox.on{border-color:var(--write);background:#2A1E14}
+.applybox b{color:var(--write)}
+input[type=checkbox]{width:16px;height:16px;accent-color:var(--write);cursor:pointer}
+
+.grid{display:grid;grid-template-columns:1fr;gap:18px}
+@media(min-width:900px){.grid{grid-template-columns:330px 1fr}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:16px 17px;margin-bottom:16px}
+.card h2{margin:0 0 12px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600}
+
+.score{display:flex;align-items:center;gap:15px}
+.dial{width:76px;height:76px;border-radius:50%;flex:0 0 auto;display:grid;
+  place-items:center;font-weight:700;font-size:25px;color:#0F1115}
+.score .meta{font-size:13.5px;color:var(--ink-2)}
+.score .meta b{display:block;color:var(--ink);font-size:15px;font-weight:600}
+
+.spark{display:flex;align-items:flex-end;gap:3px;height:38px;margin-top:12px}
+.spark i{flex:1 1 auto;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px;
+  opacity:.5}
+.spark i:last-child{opacity:1}
+
+.btns{display:flex;flex-direction:column;gap:7px}
+button{font:inherit;font-size:14px;text-align:left;cursor:pointer;
+  background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+  border-radius:7px;padding:9px 12px;display:flex;align-items:center;gap:9px;
+  transition:border-color .12s,background .12s}
+button:hover:not(:disabled){border-color:var(--accent);background:#222736}
+button:disabled{opacity:.42;cursor:not-allowed}
+button .k{font-size:11px;color:var(--ink-3);margin-left:auto;font-variant-numeric:tabular-nums}
+button.writes{border-left:3px solid var(--write)}
+button.wide{width:100%;justify-content:center;text-align:center}
+button.stop{border-color:var(--bad);color:var(--bad)}
+
+.hint{font-size:12.5px;color:var(--ink-3);margin:9px 0 0;line-height:1.5}
+
+label.opt{display:flex;align-items:center;gap:8px;font-size:13.5px;
+  color:var(--ink-2);margin:7px 0}
+input[type=text]{font:inherit;font-size:13.5px;background:var(--bg);color:var(--ink);
+  border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+input[type=text]:focus{outline:2px solid var(--accent);outline-offset:-1px}
+
+#log{background:#0B0D11;border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;
+  white-space:pre-wrap;word-break:break-word;min-height:340px;max-height:66vh;
+  overflow:auto;color:#CBD3DF}
+#log .ok{color:var(--ok)} #log .bad{color:var(--bad)} #log .warn{color:var(--warn)}
+#log .dim{color:var(--ink-3)}
+
+.status{display:flex;align-items:center;gap:10px;margin-bottom:11px;font-size:13.5px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ink-3);flex:0 0 auto}
+.dot.run{background:var(--warn);animation:pulse 1.1s infinite}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.28}}
+
+.alert{background:#2A1A1A;border:1px solid #4A2626;border-radius:7px;
+  padding:9px 12px;font-size:13.5px;margin-bottom:7px;color:#F5C7C7}
+.pill{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;
+  padding:2px 7px;border-radius:4px;background:var(--panel-2);color:var(--ink-3)}
+.warnbox{background:#2A1E14;border:1px solid #4A3520;color:#F2CFA8;
+  border-radius:7px;padding:10px 13px;font-size:13.5px;margin-bottom:13px}
+</style></head><body>
+<div class="wrap">
+
+<header>
+  <div>
+    <div class="brand">GBP Autopilot <span>&mdash; local</span></div>
+    <div class="who" id="who">loading&hellip;</div>
+  </div>
+  <div class="spacer"></div>
+  <label class="applybox" id="applybox">
+    <input type="checkbox" id="apply">
+    <span>Apply &mdash; <b>writes to the live profile</b></span>
+  </label>
+</header>
+
+<div class="grid">
+  <div>
+    <div class="card">
+      <h2>Latest audit</h2>
+      <div id="scorewrap"><p class="hint">No audit yet. Run one below.</p></div>
+    </div>
+
+    <div class="card" id="alertcard" style="display:none">
+      <h2>Alerts</h2>
+      <div id="alerts"></div>
+    </div>
+
+    <div class="card">
+      <h2>Look (never writes)</h2>
+      <div class="btns" id="readbtns"></div>
+    </div>
+
+    <div class="card">
+      <h2>Change (needs Apply)</h2>
+      <div class="btns" id="writebtns"></div>
+      <p class="hint">Without Apply these show you exactly what they would do
+      and write nothing.</p>
+    </div>
+
+    <div class="card">
+      <h2>Options</h2>
+      <label class="opt"><input type="checkbox" id="opt-force"> Publish a post even if it fails the source check</label>
+      <label class="opt"><input type="checkbox" id="opt-noimage"> Text-only post (no image)</label>
+      <label class="opt"><input type="checkbox" id="opt-includeheld"> Reply to low-star reviews too</label>
+      <label class="opt" style="display:block">Only these fixes
+        <input type="text" id="opt-only" placeholder="description,holiday_hours,services" style="margin-top:5px">
+      </label>
+      <label class="opt" style="display:block">Compare keywords
+        <input type="text" id="opt-keywords" placeholder="plumber durham, boiler repair durham" style="margin-top:5px">
+      </label>
+    </div>
+  </div>
+
+  <div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statustext">Idle</span>
+      <span class="spacer"></span>
+      <span class="pill" id="elapsed"></span>
+      <button class="stop" id="stopbtn" style="display:none;padding:5px 11px">Stop</button>
+    </div>
+    <div id="log"><span class="dim">Output appears here.</span></div>
+    <div id="reportlink" style="margin-top:12px"></div>
+  </div>
+</div>
+</div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get("t") || "";
+const api = (p, o = {}) => fetch(p + (TOKEN ? (p.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(TOKEN) : ""),
+  {...o, headers: {"Content-Type": "application/json", ...(TOKEN ? {"X-Token": TOKEN} : {})}});
+
+const $ = id => document.getElementById(id);
+const log = $("log");
+let boot = null, jobId = null, seen = 0, poll = null;
+
+const LOOK = [
+  ["audit",     "Audit + report",        "score the profile, write the HTML report"],
+  ["keywords",  "Search terms",          "what people typed to find it"],
+  ["site",      "Read the website",      "what the writer is given"],
+  ["compare",   "Compare to the map pack","needs DataForSEO"],
+  ["citations", "Directory listings",    "needs DataForSEO"],
+  ["watch",     "What changed",          "since the last check"],
+  ["history",   "Score history",         ""],
+  ["doctor",    "Doctor",                "config, login, API access"],
+];
+const CHANGE = [
+  ["fix",     "Apply the fixes",   "description, holiday hours, services"],
+  ["reviews", "Reply to reviews",  "low-star held for a human"],
+  ["post",    "Write a post",      "from a service page"],
+  ["daily",   "Daily run",         "watch + audit + reviews"],
+];
+
+function colour(line) {
+  const e = document.createElement("span");
+  let cls = "";
+  if (/^\s*(x |!|Traceback|.*(FAIL|error|refus|could not|failed))/i.test(line)) cls = "bad";
+  else if (/DRY RUN|WILL NOT PUBLISH|NOTE:|not checked|skipped/i.test(line)) cls = "warn";
+  else if (/^\s*(\+|ok\b)|Ready\.|posted\.|passed/i.test(line)) cls = "ok";
+  else if (/^\s*(-|=|#)/.test(line) || /^\s{2}\w+ \.+/.test(line)) cls = "dim";
+  if (cls) e.className = cls;
+  e.textContent = line + "\n";
+  return e;
+}
+
+function setBusy(busy) {
+  document.querySelectorAll("#readbtns button, #writebtns button")
+    .forEach(b => b.disabled = busy);
+  $("stopbtn").style.display = busy ? "" : "none";
+}
+
+function options(cmd) {
+  const o = {};
+  if (cmd === "fix" && $("opt-only").value.trim()) o["only"] = $("opt-only").value.trim();
+  if (cmd === "post") {
+    if ($("opt-force").checked) o["force"] = true;
+    if ($("opt-noimage").checked) o["no-image"] = true;
+  }
+  if (cmd === "daily" && $("opt-noimage").checked) o["no-image"] = true;
+  if (cmd === "reviews" && $("opt-includeheld").checked) o["include-held"] = true;
+  if (cmd === "compare" && $("opt-keywords").value.trim()) o["keywords"] = $("opt-keywords").value.trim();
+  return o;
+}
+
+async function run(cmd, writes) {
+  const apply = $("apply").checked && writes;
+  if (apply && !confirm(
+      `This will WRITE to the live profile:\n\n  ${boot.business}\n\n` +
+      `Command: ${cmd} --apply\n\nGo ahead?`)) return;
+
+  log.textContent = "";
+  seen = 0;
+  const r = await api("/api/run", {method: "POST", body: JSON.stringify(
+    {command: cmd, options: options(cmd), apply})});
+  const data = await r.json();
+  if (!r.ok) {
+    log.appendChild(colour("x " + data.error));
+    return;
+  }
+  jobId = data.id;
+  log.appendChild(colour("$ python run.py " + data.argv.join(" ")));
+  log.appendChild(colour(""));
+  setBusy(true);
+  $("dot").className = "dot run";
+  $("statustext").textContent = "Running " + cmd + "…";
+  clearInterval(poll);
+  poll = setInterval(tick, 700);
+}
+
+async function tick() {
+  if (!jobId) return;
+  const r = await api(`/api/job?id=${jobId}&since=${seen}`);
+  if (!r.ok) { clearInterval(poll); return; }
+  const j = await r.json();
+  j.lines.forEach(l => log.appendChild(colour(l)));
+  if (j.lines.length) log.scrollTop = log.scrollHeight;
+  seen = j.total;
+  $("elapsed").textContent = j.elapsed + "s";
+
+  if (!j.running) {
+    clearInterval(poll);
+    setBusy(false);
+    const good = j.exit_code === 0;
+    $("dot").className = "dot " + (good ? "ok" : "bad");
+    $("statustext").textContent = good
+      ? `${j.command} finished` : `${j.command} exited ${j.exit_code}`;
+    $("apply").checked = false;          // never stays armed between runs
+    applyLook();
+    load();
+  }
+}
+
+function applyLook() {
+  $("applybox").classList.toggle("on", $("apply").checked);
+}
+
+function dial(score) {
+  const c = score >= 75 ? "#4ADE80" : score >= 50 ? "#FBBF24" : "#F87171";
+  return `<div class="dial" style="background:${c}">${score}</div>`;
+}
+
+function render() {
+  $("who").innerHTML = `<b>${boot.business}</b>` +
+    (boot.city ? " &middot; " + boot.city : "") +
+    (boot.location ? ` <span class="pill" style="text-transform:none">${boot.location}</span>` : "");
+
+  const h = boot.history;
+  if (h.length) {
+    const top = h[0], prev = h[1];
+    let delta = "";
+    if (prev) {
+      const d = top.score - prev.score;
+      delta = d === 0 ? "no change since last time"
+        : `${d > 0 ? "up" : "down"} ${Math.abs(d)} since last time`;
+    }
+    const max = Math.max(...h.map(x => x.score), 100);
+    const bars = [...h].reverse()
+      .map(x => `<i style="height:${Math.max(2, x.score / max * 100)}%" title="${x.score}"></i>`).join("");
+    $("scorewrap").innerHTML =
+      `<div class="score">${dial(top.score)}<div class="meta"><b>${top.grade}</b>` +
+      `${new Date(top.when).toLocaleDateString()}<br>${delta}</div></div>` +
+      `<div class="spark">${bars}</div>`;
+  }
+
+  if (boot.alerts.length) {
+    $("alertcard").style.display = "";
+    $("alerts").innerHTML = boot.alerts.map(a =>
+      `<div class="alert"><b>${a.severity}</b> &mdash; ${a.message}</div>`).join("");
+  }
+
+  if (boot.report) {
+    $("reportlink").innerHTML =
+      `<a href="/reports/${encodeURIComponent(boot.report.name)}${TOKEN ? "?t=" + encodeURIComponent(TOKEN) : ""}" target="_blank">` +
+      `Open the latest report &rarr; ${boot.report.name}</a>`;
+  }
+
+  const mk = (list, into, writes) => {
+    into.innerHTML = "";
+    list.forEach(([cmd, label, note]) => {
+      const b = document.createElement("button");
+      if (writes) b.className = "writes";
+      b.innerHTML = `<span>${label}${note ? `<br><span class="k" style="margin:0">${note}</span>` : ""}</span>`;
+      const needsDfs = cmd === "compare" || cmd === "citations";
+      if (needsDfs && !boot.dataforseo) {
+        b.disabled = true;
+        b.title = "Needs DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD in .env";
+      } else {
+        b.onclick = () => run(cmd, writes);
+      }
+      into.appendChild(b);
+    });
+  };
+  mk(LOOK, $("readbtns"), false);
+  mk(CHANGE, $("writebtns"), true);
+}
+
+async function load() {
+  const r = await api("/api/bootstrap");
+  if (r.status === 401) {
+    document.body.innerHTML =
+      '<div class="wrap"><p style="margin-top:40px">This dashboard needs a token. ' +
+      'Open the URL printed in the terminal.</p></div>';
+    return;
+  }
+  boot = await r.json();
+  render();
+}
+
+$("apply").onchange = applyLook;
+$("stopbtn").onclick = () => api("/api/stop", {method: "POST"});
+load();
+</script>
+</body></html>

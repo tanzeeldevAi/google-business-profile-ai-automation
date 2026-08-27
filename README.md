@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-553%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://img.shields.io/badge/tests-623%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -87,6 +87,7 @@ makes the report worth sending to a prospect rather than just reading yourself.
 | `run.py compare` | Who is beating you in the map pack, and by how much |
 | `run.py citations` | Whether directories agree with the profile's phone number |
 | `run.py site` | Shows what was read from the business's own website |
+| `run.py dashboard` | A local web UI for all of the above |
 
 **It never invents a fact.** The description and posts are built only from what is already on the
 profile plus the `facts` you list in `config.yaml`. It will not claim a founding year, a
@@ -167,10 +168,11 @@ python test/test_rules.py     # 186 checks: every rule, on a good profile and a 
 python test/test_site.py      #  63 checks: website reading, discovery, grounding guard
 python test/test_keywords.py  #  84 checks: search terms, coverage, clustering
 python test/test_competitors.py # 70 checks: map-pack comparison, NAP consistency
+python test/test_dashboard.py   # 70 checks: the dashboard's command whitelist and path guards
 python test/smoke_test.py     # 150 checks: audit, report, fixes, reviews, posts, watcher
 ```
 
-**553 checks, entirely offline.** No Google account, no network, no model calls. Run these before
+**623 checks, entirely offline.** No Google account, no network, no model calls. Run these before
 every deploy — it is much cheaper than finding out on a client's profile.
 
 ### Step 5 — Sign in
@@ -232,6 +234,35 @@ python run.py daily --apply       # watch + audit + reviews, in order
 ```
 
 ---
+
+## The dashboard
+
+If you would rather click than type:
+
+```bash
+python run.py dashboard
+```
+
+```
+  Dashboard: http://127.0.0.1:8770
+  Everything is a DRY RUN until you turn on Apply.
+```
+
+The score and its history, open alerts, a button for every command, and the output streaming back
+live as it runs. It shells out to this same CLI rather than reimplementing anything, so the two
+can never disagree about what a command does.
+
+Four things it enforces:
+
+- **Dry run is the default.** Publishing needs the Apply switch turned on deliberately, it asks
+  you to confirm by business name, and **it resets itself after every run**.
+- **One job at a time.** Two commands writing to the same profile at once is how you get
+  half-applied changes. A second request is refused, not queued silently.
+- **The browser never assembles a command.** It names one from a whitelist, and each command
+  accepts only its own flags. `login` is deliberately not exposed — it opens a browser and waits,
+  which a web request cannot do.
+- **Localhost only.** Bound to `127.0.0.1` with no auth. Point it anywhere else and it demands
+  `--token` first, because it holds a live Google login for somebody else's business.
 
 ## Comparing against whoever is actually ranking
 
@@ -565,6 +596,8 @@ gbp/
   images.py          post images, and where they may not go
   site.py            reads the business's own website, and the grounding guard
   keywords.py        search terms, coverage analysis, clustering into services
+  dashboard.py       the local web UI: whitelisted commands, streamed output
+  static/dashboard.html
   competitors.py     the live map pack, and the delta against the top three
   citations.py       directory listings and NAP consistency
   dataforseo.py      the one paid dependency, isolated and optional
@@ -572,7 +605,7 @@ gbp/
   watch.py           change and suspension detection
   llm.py             Claude CLI or API, plus the AI-tell stripper
   db.py              SQLite: idempotence, audit history, alerts
-test/                553 offline checks
+test/                623 offline checks
 ```
 
 ---

@@ -8,6 +8,7 @@
     python run.py fix             apply what can be fixed automatically
     python run.py reviews         reply to unanswered reviews
     python run.py post            write and publish a Google Post
+    python run.py dashboard       a local web UI for all of the above
     python run.py watch           what changed since last time
     python run.py daily           audit + watch + reviews + post, in order
 
@@ -22,6 +23,7 @@ import traceback
 from datetime import datetime, timezone
 
 from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
+                 dashboard as dash,
                  dataforseo as dfs, db, fix as fix_mod, holidays, images,
                  keywords as kw_mod, llm, posts, report, reviews,
                  site as site_mod, watch)
@@ -305,6 +307,18 @@ def _our_facts(snap, client=None, account=None, location=None):
         vals = [v for v in vals if v]
         rating = round(sum(vals) / len(vals), 2) if vals else None
     return reviews, rating, photos
+
+
+def cmd_dashboard(args) -> int:
+    """Serve the local web dashboard.
+
+    Every button shells out to this same CLI, so the two can never disagree
+    about what a command does.
+    """
+    cfg = config.load(args.config)
+    db.init()
+    dash.serve(cfg, host=args.host, port=args.port, token=args.token or "")
+    return 0
 
 
 def cmd_compare(args) -> int:
@@ -618,6 +632,13 @@ def main() -> int:
     p.add_argument("--force", action="store_true",
                    help="publish even if the post could not be kept inside "
                         "its source page")
+
+    p = sub.add_parser("dashboard", help="serve the local web dashboard")
+    p.set_defaults(func=cmd_dashboard)
+    p.add_argument("--port", type=int, default=8770)
+    p.add_argument("--host", default="127.0.0.1",
+                   help="leave this alone unless you know why you are changing it")
+    p.add_argument("--token", help="required if --host is not localhost")
 
     p = sub.add_parser("compare",
                        help="how you stack up against the map pack")
