@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
                  dashboard as dash,
                  dataforseo as dfs, db, fix as fix_mod, holidays, images,
-                 keywords as kw_mod, llm, posts, report, reviews,
+                 keywords as kw_mod, llm, posts, profiles, report, reviews,
                  site as site_mod, watch)
 from gbp.api import ApiError, Client, split_location_id
 from gbp.auth import AuthError
@@ -57,7 +57,16 @@ def _resolve(client: Client, cfg: dict, args) -> tuple[str, str]:
     exactly one location -- that one. Anything else is an error, because
     guessing which client's profile to write to is not a thing this tool does.
     """
-    want = getattr(args, "location", None) or cfg.get("location", {}).get("name")
+    want = getattr(args, "location", None) or ""
+
+    # The profiles the dashboard has connected. Checking these first means the
+    # everyday case -- "act on the business I selected" -- costs no API calls
+    # and works even when Google is slow.
+    account, location = profiles.resolve(cfg, want)
+    if account and location:
+        return account, location
+
+    want = want or cfg.get("location", {}).get("name")
     account_cfg = cfg.get("location", {}).get("account")
 
     accounts = client.accounts()
@@ -105,8 +114,15 @@ def _snapshot(client: Client, cfg: dict, args, *, verbose: bool = True,
     business's real words.
     """
     account, location = _resolve(client, cfg, args)
+    # From here on, "cfg" means THIS business's config: config.yaml with its own
+    # facts, service pages and keywords layered over the top. Merge first, then
+    # swap the contents -- clearing before reading would hand the merge an empty
+    # dict and silently drop every global setting.
+    merged = profiles.settings_for(dict(cfg), location)
+    cfg.clear()
+    cfg.update(merged)
     if verbose:
-        print(f"\n  Reading {location}\n")
+        print(f"\n  Reading {profiles.describe(location) or location}\n")
     snap, skipped, site_data, analysis = audit_mod.fetch_snapshot(
         client, account, location, verbose=verbose, cfg=cfg,
         fetch_site=fetch_site)
@@ -223,8 +239,7 @@ def cmd_audit(args) -> int:
 
     prev = db.previous_score(location)
     db.save_audit(location, result.title, result.score, result.grade,
-                  [{"id": f.rule_id, "passed": f.passed, "severity": f.severity,
-                    "title": f.title, "detail": f.detail} for f in result.findings])
+                  [f.to_dict() for f in result.findings])
 
     if not args.no_report:
         path = report.write(result, prepared_by=cfg.get("prepared_by", ""),
@@ -503,7 +518,7 @@ def cmd_daily(args) -> int:
     result = audit_mod.audit(snap, cfg, skipped)
     prev = db.previous_score(location)
     db.save_audit(location, result.title, result.score, result.grade,
-                  [{"id": f.rule_id, "passed": f.passed} for f in result.findings])
+                  [f.to_dict() for f in result.findings])
     audit_mod.print_summary(result)
     path = report.write(result, prepared_by=cfg.get("prepared_by", ""),
                         previous_score=prev)

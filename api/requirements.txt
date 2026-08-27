@@ -1,0 +1,5 @@
+# The React app's backend. Only needed if you use the web app; the CLI has no
+# use for any of this.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6

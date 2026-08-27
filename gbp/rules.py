@@ -84,6 +84,23 @@ class Finding:
         """The command that handles this finding, or None if a person must."""
         return HANDLED_BY.get(self.fix_key or "")
 
+    def to_dict(self) -> dict:
+        """The whole finding, for storage and for the API.
+
+        Stored in full rather than as a summary: the app shows "why it
+        matters" and "what to do" straight from history, so a report from six
+        months ago is still readable without re-running the audit.
+        """
+        return {
+            "rule_id": self.rule_id, "title": self.title,
+            "severity": self.severity, "category": self.category,
+            "passed": self.passed, "detail": self.detail, "why": self.why,
+            "fix": self.fix, "fixable": self.fixable,
+            "informational": self.informational, "command": self.command,
+            # Kept so rows written by older versions still read back.
+            "id": self.rule_id,
+        }
+
     @property
     def points(self) -> int:
         return 0 if self.informational else SEVERITY_POINTS[self.severity]

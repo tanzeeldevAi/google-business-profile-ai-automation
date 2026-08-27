@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+body { @apply bg-base text-ink antialiased; }
+
+/* The job log. Monospace, wraps, and scrolls inside itself so the page never
+   scrolls sideways on a long URL. */
+.logline { @apply whitespace-pre-wrap break-words; }

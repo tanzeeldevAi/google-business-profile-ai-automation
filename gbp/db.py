@@ -47,6 +47,25 @@ CREATE TABLE IF NOT EXISTS snapshots (
     created_at   REAL NOT NULL
 );
 
+-- The businesses this install manages. One row per connected Google Business
+-- Profile, with that business's OWN settings (its facts, its service pages)
+-- kept separate from config.yaml, which describes the tool.
+CREATE TABLE IF NOT EXISTS profiles (
+    location     TEXT PRIMARY KEY,
+    account      TEXT NOT NULL,
+    title        TEXT,
+    city         TEXT,
+    settings     TEXT NOT NULL DEFAULT '{}',
+    added_at     REAL NOT NULL,
+    last_seen    REAL
+);
+
+-- Small key/value corner for things like "which profile is selected".
+CREATE TABLE IF NOT EXISTS app_state (
+    k            TEXT PRIMARY KEY,
+    v            TEXT
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     location     TEXT NOT NULL,

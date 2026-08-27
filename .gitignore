@@ -23,6 +23,12 @@ reports/
 # Cached DataForSEO responses -- they contain competitor data for a client.
 data/dataforseo/
 
+# the web app's build output and dependencies
+app/node_modules/
+app/.next/
+app/out/
+app/next-env.d.ts
+
 # runtime
 .venv/
 venv/
@@ -37,3 +43,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+app/tsconfig.tsbuildinfo
