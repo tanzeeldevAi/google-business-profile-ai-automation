@@ -1,0 +1,12 @@
+# Google auth and the Business Profile APIs (called over plain HTTP)
+google-auth>=2.28
+google-auth-oauthlib>=1.2
+requests>=2.31
+
+# Config
+PyYAML>=6.0
+python-dotenv>=1.0
+
+# Only needed when images.backend is "chatgpt".
+# Remove this line if you use gemini or no images at all.
+playwright>=1.40

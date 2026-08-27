@@ -1,0 +1,193 @@
+# =============================================================================
+# gbp-autopilot config
+#
+# Copy this file to config.yaml and edit it. Secrets do NOT go in here -- they
+# live in .env. That split is deliberate: config.yaml is safe to commit and safe
+# to hand to a client, .env is not.
+#
+# The example throughout is a fictional plumbing company. Replace it.
+# =============================================================================
+
+# Shown in the footer of the HTML audit report. Your name or your agency's.
+prepared_by: ""
+
+# Print every API call. Useful once, when something is not behaving.
+verbose: false
+
+
+# -----------------------------------------------------------------------------
+# WHICH PROFILE
+#
+# Leave both blank if the Google account manages exactly one profile -- the tool
+# will find it. With more than one, run `python run.py locations` and paste the
+# two values here, or pass --location on every command.
+# -----------------------------------------------------------------------------
+location:
+  account: ""              # accounts/123456789
+  name: ""                 # locations/123456789
+
+
+# -----------------------------------------------------------------------------
+# THE BUSINESS
+#
+# This is what stops the review replies and posts sounding like they were
+# written by a machine that has never seen the business.
+#
+# `facts` is the ONLY place the writer may take claims from. It will not invent
+# a founding year, a certification, an award, a guarantee or a price. If it is
+# not written here, it does not go on the profile. Keep every line true and
+# checkable -- these end up in public.
+# -----------------------------------------------------------------------------
+business:
+  name: "Northgate Plumbing"
+  city: "Durham"
+  what_we_do: >-
+    Emergency plumbing, blocked drains, boiler repair and bathroom
+    installation for homes and small commercial premises.
+  facts:
+    - "Trading since 2009."
+    - "Gas Safe registered."
+    - "Engineers are directly employed, not subcontracted."
+    - "Twelve month guarantee on workmanship."
+    - "Covers Durham, Chester-le-Street, Spennymoor and Bishop Auckland."
+
+
+# -----------------------------------------------------------------------------
+# WRITING
+#
+#   backend: claude  -> uses the `claude` CLI you are already signed into, so
+#                       drafting runs on your existing subscription. No API key.
+#   backend: api     -> the Anthropic API. Needs ANTHROPIC_API_KEY in .env.
+#                       Use this on a server with no CLI login.
+# -----------------------------------------------------------------------------
+llm:
+  backend: claude
+  model: sonnet            # for backend: api use a full id, e.g. claude-sonnet-5
+  timeout_seconds: 120
+
+
+# -----------------------------------------------------------------------------
+# AUDIT THRESHOLDS
+#
+# These decide what counts as a pass. The defaults are what a profile needs to
+# compete in an average local market; raise them for a competitive city.
+# -----------------------------------------------------------------------------
+audit:
+  min_secondary_categories: 3
+  min_description_chars: 500
+  min_services: 5
+  min_attributes: 5
+  min_photos: 20
+  photo_freshness_days: 30
+  min_reviews: 25
+  min_rating: 4.0
+  min_response_rate: 0.95      # share of reviews that must have a reply
+  max_reply_days: 7            # a reply later than this counts as unanswered
+  velocity_days: 90
+  min_recent_reviews: 3
+  post_freshness_days: 7
+  min_posts_90d: 8
+  min_questions: 5
+  holiday_horizon_days: 60
+
+
+# -----------------------------------------------------------------------------
+# REVIEWS
+# -----------------------------------------------------------------------------
+reviews:
+  # Reviews below this rating are DRAFTED but HELD for you rather than sent.
+  # An automated reply to an angry customer is public forever and reads exactly
+  # like what it is. 4 means 1, 2 and 3 star reviews wait for a human.
+  hold_below: 4
+
+  # Cap per run, so a first run on a profile with 300 unanswered reviews does
+  # not fire 300 replies in one burst.
+  max_per_run: 10
+
+  # Optional. One line about how the owner talks.
+  tone: ""
+
+
+# -----------------------------------------------------------------------------
+# POSTS
+# -----------------------------------------------------------------------------
+posts:
+  language: en
+  # BOOK, ORDER, SHOP, LEARN_MORE, SIGN_UP or CALL.
+  # Everything except CALL needs a url.
+  cta_type: LEARN_MORE
+  cta_url: ""              # blank falls back to the website on the profile
+
+
+# -----------------------------------------------------------------------------
+# POST IMAGES
+#
+# READ THIS BEFORE TURNING IT ON.
+#
+# These images go on POSTS ONLY. The tool will not put a generated image in the
+# profile's photo gallery, and there is no setting to make it. Google's photo
+# rules require photos to represent the actual business; a gallery of generated
+# images is a well-trodden route to a quality review and a suspension. A drawn
+# illustration on a weekly post is ordinary marketing. A generated "photo of our
+# workshop" is not.
+#
+# Real photos of real jobs beat these every time. Use them when you have them.
+#
+#   backend: chatgpt   drives a Chrome you are ALREADY logged into, over the
+#                      DevTools protocol. No API key, no per-image cost.
+#                      Start Chrome like this first, and leave it open:
+#                        chrome.exe --remote-debugging-port=9222 \
+#                                   --user-data-dir=C:/gbp-chrome
+#                      Note this is browser automation of a site whose terms
+#                      do not permit it. Your account, your call.
+#   backend: gemini    Google AI Studio over HTTP. Needs GOOGLE_API_KEY.
+#                      Free tier, stable, works on a server.
+#   backend: none      no images. Posts still publish, as text.
+#
+# HOSTING. Google Posts take a public image URL, not a file, so a generated
+# image has to be reachable on the web before a post can use it.
+#   host: imagekit   uploads via the ImageKit API. Needs IMAGEKIT_PRIVATE_KEY.
+#   host: base_url   you sync data/images/ to your own web space.
+#   host: none       images are generated and saved locally but not attached.
+# -----------------------------------------------------------------------------
+images:
+  backend: none
+  host: none
+
+  cdp: "http://localhost:9222"     # backend: chatgpt
+  wait_seconds: 180
+
+  gemini_model: "gemini-2.5-flash-image"
+
+  base_url: ""                     # host: base_url, e.g. https://cdn.example.com/gbp
+  imagekit_folder: "/gbp-posts"    # host: imagekit
+
+
+# -----------------------------------------------------------------------------
+# HOLIDAY HOURS
+#
+# `run.py fix` adds special hours for upcoming public holidays. Days default to
+# CLOSED, because being wrongly listed as open on a holiday earns one-star
+# reviews from people who drove to a locked door.
+#
+# List any holiday you actually trade on under `open_on`, by date or by name.
+#
+# IMPORTANT for the Gulf, South Asia, and anywhere with lunar holidays: Eid,
+# Diwali and similar are NOT computed, because the observed date varies by
+# country and is sometimes announced days ahead. Put them in `extra` yourself.
+# The tool warns you when your country needs this rather than guessing.
+# -----------------------------------------------------------------------------
+holidays:
+  region_code: ""          # blank uses the country on the profile address
+  horizon_days: 60
+  closed_by_default: true
+  open_hour: 9
+  close_hour: 17
+
+  open_on: {}
+  #  "2026-12-26": true
+  #  "Boxing Day": true
+
+  extra: []
+  #  - {date: 2027-03-20, name: "Eid al-Fitr"}
+  #  - {date: 2027-05-27, name: "Eid al-Adha"}

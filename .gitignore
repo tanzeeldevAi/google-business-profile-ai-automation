@@ -1,0 +1,36 @@
+# ============================================================
+# SECRETS AND CLIENT DATA - never commit anything in here.
+# ============================================================
+
+.env
+*.key
+*.pem
+
+# YOUR config. It holds the client's business facts and, once filled in, the
+# location id of a profile you manage. config.example.yaml is the tracked one.
+config.yaml
+
+# Google OAuth. client_secret.json identifies your app; token.json is a live
+# key to every profile the signed-in account manages. Treat both as passwords.
+data/client_secret.json
+data/token.json
+
+# Everything else the tool writes: the database (client audit history, review
+# replies), generated images, and the HTML reports, which carry client names.
+data/
+reports/
+
+# runtime
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
