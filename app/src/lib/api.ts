@@ -79,6 +79,21 @@ export type Capabilities = {
   setup: SetupItem[];
 };
 
+export type PlannedFix = {
+  key: string;
+  title: string;
+  before: string;
+  after: string;
+  notes: string[];
+  proposed: { name: string; description: string; terms: string[] }[];
+};
+
+export type FixPlan = {
+  location: string;
+  planned_at: number;
+  fixes: PlannedFix[];
+};
+
 export type Review = {
   name: string;
   reviewer: string;
@@ -156,6 +171,8 @@ export const api = {
   status: () => call<Status>("/api/status"),
   capabilities: (location: string, refresh = false) =>
     call<Capabilities>(`/api/capabilities/${location}${refresh ? "?refresh=true" : ""}`),
+  fixPlan: (location: string) =>
+    call<{ plan: FixPlan | null }>(`/api/fix/plan/${location}`),
   reviews: (location: string) =>
     call<{ reviews: Review[]; average: number | null; total: number;
            unanswered: number; blocked: string | null }>(`/api/reviews/${location}`),

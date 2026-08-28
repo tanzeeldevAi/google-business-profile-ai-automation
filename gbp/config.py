@@ -20,6 +20,9 @@ DB_PATH = DATA_DIR / "gbp.db"
 # OAuth artefacts. Both are secrets; both are gitignored.
 CLIENT_SECRET_PATH = DATA_DIR / "client_secret.json"
 TOKEN_PATH = DATA_DIR / "token.json"
+# Planned changes, one file per location, so the app can show what a dry run
+# would actually write instead of only printing it.
+PLAN_DIR = DATA_DIR / "plans"
 
 load_dotenv(ROOT / ".env")
 

@@ -280,6 +280,9 @@ def cmd_fix(args) -> int:
     fixes = fix_mod.plan(result, snap, cfg, only=only, site_data=site_data,
                          analysis=analysis)
     fix_mod.show(fixes)
+    # Save the plan whether or not anything is applied, so the app can render
+    # the exact before and after instead of asking the operator to read a log.
+    fix_mod.save_plan(location, fixes)
     if fixes:
         fix_mod.apply(fixes, client, location, dry_run=not args.apply)
     return 0

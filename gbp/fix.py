@@ -17,13 +17,16 @@ judgement about the business.
 """
 from __future__ import annotations
 
+import json
+import pathlib
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from . import db, holidays, keywords, llm, site
-from .api import Client
+from . import config, db, holidays, keywords, llm, site
+from .api import Client, split_location_id
 from .audit import AuditResult
 from .rules import Snapshot
 
@@ -39,6 +42,10 @@ class Fix:
     update_mask: str
     body: dict[str, Any]
     notes: list[str] = field(default_factory=list)
+    # Individually judgeable additions, where a fix proposes several things at
+    # once. Each carries the evidence that produced it, because "read every
+    # line before applying" is only fair if the reason is shown next to it.
+    proposed: list[dict] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------ description
@@ -432,6 +439,12 @@ def plan_services(snap: Snapshot, cfg: dict,
         update_mask="serviceItems",
         body={"serviceItems": items},
         notes=notes,
+        proposed=[
+            {"name": name,
+             "description": desc,
+             "terms": [k.term for k in group["terms"][:8]]}
+            for name, desc, group in proposed
+        ],
     )
 
 
@@ -485,6 +498,42 @@ def show(fixes: list[Fix]) -> None:
         for n in f.notes:
             print(f"  {n}")
     print()
+
+
+def to_dict(fix: Fix) -> dict:
+    """One planned change, as data.
+
+    `show` prints these for a terminal. The app needs the same thing
+    structured, because "here is the log we printed" is not an answer to
+    "what exactly are you about to change on my profile".
+    """
+    return {
+        "key": fix.key,
+        "title": fix.title,
+        "before": fix.before,
+        "after": fix.after,
+        "notes": list(fix.notes),
+        # Where a fix proposes several things at once, each is listed on its
+        # own with the search terms that produced it -- a service on a profile
+        # is a promise, and a wall of text hides that.
+        "proposed": list(fix.proposed),
+    }
+
+
+def save_plan(location_name: str, fixes: list[Fix]) -> pathlib.Path:
+    """Write the plan next to the reports so the app can render it.
+
+    Keyed by location, because one install manages many businesses and a plan
+    for one client must never be shown against another.
+    """
+    config.PLAN_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.PLAN_DIR / f"{split_location_id(location_name)}.json"
+    path.write_text(json.dumps({
+        "location": location_name,
+        "planned_at": time.time(),
+        "fixes": [to_dict(f) for f in fixes],
+    }, indent=1), encoding="utf-8")
+    return path
 
 
 def apply(fixes: list[Fix], client: Client, location_name: str,

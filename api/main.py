@@ -505,6 +505,30 @@ def what_works(location: str, request: Request, refresh: bool = False) -> dict:
     return capabilities.to_dict(report)
 
 
+@app.get("/api/fix/plan/{location:path}")
+def fix_plan(location: str, request: Request) -> dict:
+    """The exact changes the last preview would make.
+
+    A dry run used to leave its result only in the job log, which answered
+    "did it run" but not "what is it about to write on my profile". The plan
+    is saved as data now, and this hands it back so the app can show a real
+    before and after.
+    """
+    guard(request)
+    path = config.PLAN_DIR / f"{split_location_id(location)}.json"
+    if not path.exists():
+        return {"plan": None}
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {"plan": None}
+    # A plan belongs to one business. Never show one client's proposed changes
+    # while another is selected.
+    if plan.get("location") and plan["location"] != location:
+        return {"plan": None}
+    return {"plan": plan}
+
+
 @app.get("/api/audit/{location:path}")
 def latest_audit(location: str, request: Request) -> dict:
     """The most recent stored audit, with every finding. Painted instantly --
