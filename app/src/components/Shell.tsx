@@ -252,6 +252,31 @@ function ProfilePicker({
   const initials = (t: string) =>
     t.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
+  /**
+   * Only the businesses this Google sign-in can actually act on.
+   *
+   * One OAuth token covers one Google account, so a profile connected under a
+   * different account is not something you can audit, fix or post to right
+   * now. Listing it greyed out was noise: it made a one-client menu look like
+   * a four-client menu. It is hidden rather than forgotten -- sign in with the
+   * other account and it comes straight back.
+   *
+   * The active profile always stays in the list even if it is unreachable, so
+   * the menu can never disagree with the name in the button above it.
+   */
+  const shown = profiles.filter(
+    (p) => p.reachable || p.location === active?.location);
+  const hidden = profiles.length - shown.length;
+
+  // Google will happily report two separate listings with the same name in the
+  // same city -- real duplicates on the account, not a bug here. Tell them
+  // apart by id, but only for the names that actually collide.
+  const nameKey = (p: Profile) => `${p.title}|${p.city}`;
+  const counts = new Map<string, number>();
+  for (const p of shown) counts.set(nameKey(p), (counts.get(nameKey(p)) ?? 0) + 1);
+  const ambiguous = new Set(
+    [...counts.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+
   return (
     <div className="relative min-w-0">
       <button
@@ -285,7 +310,7 @@ function ProfilePicker({
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute z-50 mt-2 w-[22rem] max-h-[26rem] overflow-auto scroll-slim
             rounded-g border border-g-grey300 bg-white shadow-e3 py-2 animate-fade-up">
-            {profiles.map((p) => (
+            {shown.map((p) => (
               <button
                 key={p.location}
                 disabled={!p.reachable}
@@ -306,6 +331,8 @@ function ProfilePicker({
                   </span>
                   <span className="block truncate text-[11px] text-g-grey600">
                     {p.city}
+                    {ambiguous.has(nameKey(p)) &&
+                      ` · id …${p.location.slice(-4)}`}
                     {!p.reachable && " · other Google account"}
                   </span>
                 </span>
@@ -317,6 +344,13 @@ function ProfilePicker({
               </button>
             ))}
             <div className="mt-1 border-t border-g-grey200 pt-1">
+              {hidden > 0 && (
+                <p className="px-4 pb-1.5 pt-1 text-[11px] leading-snug text-g-grey600">
+                  {hidden} more {hidden === 1 ? "business is" : "businesses are"} connected
+                  under a different Google account. Sign in with that account to see
+                  {hidden === 1 ? " it" : " them"}.
+                </p>
+              )}
               <Link
                 href="/connect"
                 onClick={() => setOpen(false)}
