@@ -82,13 +82,13 @@ export default function Connect() {
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <Card title="Step 1 — sign in to Google">
-        <p className="text-sm text-ink-2 mb-4">
+        <p className="text-sm text-g-grey700 mb-4">
           Opens a browser window on this machine. Sign in with the account that
-          <strong className="text-ink"> owns or manages</strong> the Business
+          <strong className="text-g-grey900"> owns or manages</strong> the Business
           Profile. The login is saved locally and reused, so you only do this once.
         </p>
         <div className="flex items-center gap-3 flex-wrap">
-          <Button kind="primary" disabled={busy} onClick={signIn}>
+          <Button kind="filled" disabled={busy} onClick={signIn}>
             {waiting
               ? "Waiting for Google…"
               : status?.google.signed_in
@@ -97,11 +97,11 @@ export default function Connect() {
           </Button>
           {status?.google.signed_in && !waiting && (
             <>
-              <span className="text-sm text-good">
+              <span className="text-sm text-g-green">
                 Signed in · token {status.google.token_age_days} days old
               </span>
               <button
-                className="text-xs text-ink-3 hover:text-bad"
+                className="text-xs text-g-grey600 hover:text-g-red"
                 onClick={async () => {
                   if (!confirm("Sign out?\n\nThe connected businesses stay in the list; you just have to sign in again to act on them.")) return;
                   await api.signOut();
@@ -114,12 +114,12 @@ export default function Connect() {
           )}
         </div>
         {waiting && (
-          <p className="text-sm text-warn mt-3">
+          <p className="text-sm text-[#b06000] mt-3">
             A Google window opened. Pick the account, approve access, and this
             page will carry on by itself.
           </p>
         )}
-        <p className="text-xs text-ink-3 mt-4 leading-relaxed">
+        <p className="text-xs text-g-grey600 mt-4 leading-relaxed">
           If your OAuth consent screen is still in Testing mode, Google expires the
           login every 7 days. Publishing the app in Cloud Console stops that, and you
           do not need Google to verify it for your own use.
@@ -127,14 +127,14 @@ export default function Connect() {
       </Card>
 
       <Card title="Step 2 — find the businesses">
-        <p className="text-sm text-ink-2 mb-4">
+        <p className="text-sm text-g-grey700 mb-4">
           Asks Google what this account manages. Every profile it finds becomes
           selectable from the menu at the top of the page.
         </p>
         <Button onClick={discover} disabled={busy || !status?.google.signed_in}>
           {busy ? "Looking…" : "Find my business profiles"}
         </Button>
-        {error && <p className="text-sm text-bad mt-3">{error}</p>}
+        {error && <p className="text-sm text-g-red mt-3">{error}</p>}
 
         {found && (
           <div className="mt-4">
@@ -142,12 +142,12 @@ export default function Connect() {
               <Empty>This account manages no Business Profiles.</Empty>
             ) : (
               <>
-                <p className="text-sm text-good mb-2">Found {found.length}:</p>
+                <p className="text-sm text-g-green mb-2">Found {found.length}:</p>
                 <ul className="text-sm space-y-1">
                   {found.map((f) => (
                     <li key={f.location} className="flex gap-2">
                       <span className="font-medium">{f.title}</span>
-                      <span className="text-ink-3">{f.city}</span>
+                      <span className="text-g-grey600">{f.city}</span>
                     </li>
                   ))}
                 </ul>
@@ -163,17 +163,17 @@ export default function Connect() {
         ) : (
           <div className="space-y-2">
             {profiles.map((p) => (
-              <div key={p.location} className="flex items-center gap-3 p-3 rounded-lg bg-panel-2">
+              <div key={p.location} className="flex items-center gap-3 p-3 rounded-lg bg-g-grey100">
                 <div className="min-w-0">
                   <div className="font-medium truncate">{p.title || p.location}</div>
-                  <div className="text-xs text-ink-3 truncate">
+                  <div className="text-xs text-g-grey600 truncate">
                     {p.city} · <code>{p.location}</code>
                   </div>
                 </div>
                 <div className="ml-auto flex items-center gap-3 shrink-0">
                   {p.score != null && <span className="text-sm font-semibold">{p.score}</span>}
                   <button
-                    className="text-xs text-ink-3 hover:text-bad"
+                    className="text-xs text-g-grey600 hover:text-g-red"
                     onClick={async () => {
                       if (!confirm(`Remove ${p.title} from the list?\n\nIts audit history is kept.`)) return;
                       await api.forget(p.location);

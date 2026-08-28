@@ -53,6 +53,34 @@ export type ProfileSettings = {
   holidays?: { region_code?: string };
 };
 
+export type Capability = {
+  key: string;
+  label: string;
+  ok: boolean;
+  reason: string;
+  fix: string;
+  link: string;
+  breaks: string;
+};
+
+export type Capabilities = {
+  project: string;
+  checked_at: number;
+  all_ok: boolean;
+  capabilities: Capability[];
+};
+
+export type Review = {
+  name: string;
+  reviewer: string;
+  photo: string;
+  stars: number;
+  comment: string;
+  when: string;
+  reply: string | null;
+  replied_when: string | null;
+};
+
 export type Clock = {
   checked: boolean;
   skew: number | null;
@@ -117,6 +145,20 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => call<Status>("/api/status"),
+  capabilities: (location: string, refresh = false) =>
+    call<Capabilities>(`/api/capabilities/${location}${refresh ? "?refresh=true" : ""}`),
+  reviews: (location: string) =>
+    call<{ reviews: Review[]; average: number | null; total: number;
+           unanswered: number; blocked: string | null }>(`/api/reviews/${location}`),
+  replyToReview: (location: string, name: string, comment: string) =>
+    call<{ ok: boolean }>(`/api/reviews/${location}/reply`, {
+      method: "POST", body: JSON.stringify({ name, comment }),
+    }),
+  draftReply: (location: string, name: string) =>
+    call<{ draft: string; held: boolean; why: string }>(
+      `/api/reviews/${location}/draft`, {
+        method: "POST", body: JSON.stringify({ name }),
+      }),
   authStart: () => call<{ url: string }>("/api/auth/start"),
   signOut: () => call<{ signed_out: boolean }>("/api/auth/signout", { method: "POST" }),
   profiles: () => call<{ profiles: Profile[]; active: string }>("/api/profiles"),

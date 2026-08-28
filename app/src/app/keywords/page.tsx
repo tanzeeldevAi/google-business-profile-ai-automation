@@ -23,13 +23,13 @@ export default function KeywordsPage() {
           <p>
             Every term is cross-referenced against the business name, categories,
             description, services, recent posts and the website. The ones marked{" "}
-            <strong className="text-ink">NOWHERE</strong> are the work: Google is already
+            <strong className="text-g-grey900">NOWHERE</strong> are the work: Google is already
             showing this business for words the profile never says.
           </p>
         </>
       }
       controls={
-        <div className="rounded-lg bg-panel-2 p-3.5">
+        <div className="rounded-lg bg-g-grey100 p-3.5">
           <Toggle
             label="Also write the full list to a CSV"
             hint="Lands in the reports folder. Useful to send to a client."
@@ -40,7 +40,7 @@ export default function KeywordsPage() {
       }
     >
       <Card title="Then turn the gaps into services">
-        <p className="text-sm text-ink-2">
+        <p className="text-sm text-g-grey700">
           The Fix screen clusters the variants (&ldquo;boiler repair&rdquo;, &ldquo;boiler
           repair near me&rdquo; and &ldquo;emergency boiler repair&rdquo; are one
           service), names each one in the customer&apos;s own words, and writes a
@@ -50,19 +50,19 @@ export default function KeywordsPage() {
       </Card>
 
       <Card title="Three things the raw data will not tell you">
-        <ul className="text-sm text-ink-2 space-y-2 list-disc pl-5">
+        <ul className="text-sm text-g-grey700 space-y-2 list-disc pl-5">
           <li>
-            <strong className="text-ink">Threshold counts.</strong> Google returns an
+            <strong className="text-g-grey900">Threshold counts.</strong> Google returns an
             exact number for big terms and &ldquo;fewer than 15&rdquo; for the rest. Most
             terms are the latter. They are kept and ranked below exact counts, because a
             long-tail phrase with real intent is not worthless.
           </li>
           <li>
-            <strong className="text-ink">Brand searches are separated out.</strong> A
+            <strong className="text-g-grey900">Brand searches are separated out.</strong> A
             coverage score that counts your own name is flattering and useless.
           </li>
           <li>
-            <strong className="text-ink">The city is not required.</strong> &ldquo;boiler
+            <strong className="text-g-grey900">The city is not required.</strong> &ldquo;boiler
             repair durham&rdquo; is covered by a service called &ldquo;Boiler repair&rdquo;
             on a profile already in Durham.
           </li>

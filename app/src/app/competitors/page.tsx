@@ -34,13 +34,13 @@ export default function CompetitorsPage() {
           </p>
           <p>
             This asks a better question: what do the businesses ranking{" "}
-            <strong className="text-ink">above you</strong> actually have? A delta
+            <strong className="text-g-grey900">above you</strong> actually have? A delta
             against whoever is genuinely winning is not a guess.
           </p>
         </>
       }
       controls={
-        <div className="rounded-lg bg-panel-2 p-3.5">
+        <div className="rounded-lg bg-g-grey100 p-3.5">
           <Field
             label="Keywords to check (max 5)"
             value={keywords}
@@ -52,21 +52,21 @@ export default function CompetitorsPage() {
       }
     >
       <Card title="What gets compared">
-        <ul className="text-sm text-ink-2 space-y-2 list-disc pl-5">
+        <ul className="text-sm text-g-grey700 space-y-2 list-disc pl-5">
           <li>
-            <strong className="text-ink">Reviews</strong> against the top-three average,
+            <strong className="text-g-grey900">Reviews</strong> against the top-three average,
             and how far behind.
           </li>
           <li>
-            <strong className="text-ink">Categories</strong> that two or more of the top
+            <strong className="text-g-grey900">Categories</strong> that two or more of the top
             three carry and this profile does not. One rival having an odd category is
             noise; two of three is how that market is described.
           </li>
           <li>
-            <strong className="text-ink">Photos</strong> against the top-three average.
+            <strong className="text-g-grey900">Photos</strong> against the top-three average.
           </li>
         </ul>
-        <p className="text-sm text-ink-3 mt-3">
+        <p className="text-sm text-g-grey600 mt-3">
           Competitors&apos; post cadence and review velocity are not compared, because no
           third party exposes them. Aggregator entries that rank in Maps are filtered out
           — averaging your reviews against a directory page is meaningless.

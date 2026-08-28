@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gbp import auth, clock, config, db, profiles  # noqa: E402
+from gbp import auth, capabilities, clock, config, db, profiles  # noqa: E402
 from gbp.api import ApiError, Client, split_location_id  # noqa: E402
 from gbp.auth import AuthError  # noqa: E402
 
@@ -484,6 +484,27 @@ def put_settings(location: str, body: Settings, request: Request) -> dict:
     return {"settings": (profiles.get(location) or {}).get("settings", {})}
 
 
+@app.get("/api/capabilities/{location:path}")
+def what_works(location: str, request: Request, refresh: bool = False) -> dict:
+    """What this Google project can actually do for this profile.
+
+    Exists because of a real failure: publishing a post to a project without
+    the legacy API enabled returned 403, the job carried on, and the profile
+    simply had no post on it. Silence and success looked identical.
+    """
+    guard(request)
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "that profile is not connected")
+    try:
+        client = Client(auth.credentials(interactive=False))
+        report = capabilities.probe(client, profile["account"], location,
+                                    force=refresh)
+    except AuthError as exc:
+        raise HTTPException(401, str(exc))
+    return capabilities.to_dict(report)
+
+
 @app.get("/api/audit/{location:path}")
 def latest_audit(location: str, request: Request) -> dict:
     """The most recent stored audit, with every finding. Painted instantly --
@@ -514,6 +535,125 @@ def latest_audit(location: str, request: Request) -> dict:
         "when": iso(row["created_at"]), "findings": findings,
         "previous": db.previous_score(location),
     }}
+
+
+STARS = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5}
+
+
+@app.get("/api/reviews/{location:path}")
+def list_reviews(location: str, request: Request) -> dict:
+    """Every review, with its reply. The inbox reads from here.
+
+    When the API is switched off this returns `blocked` with the reason rather
+    than an empty list -- "no reviews" and "we were not allowed to look" must
+    never render the same.
+    """
+    guard(request)
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "that profile is not connected")
+    try:
+        client = Client(auth.credentials(interactive=False))
+        raw = client.reviews(profile["account"], split_location_id(location))
+    except AuthError as exc:
+        raise HTTPException(401, str(exc))
+    except ApiError as exc:
+        report = capabilities.probe(client, profile["account"], location)
+        cap = report.get("reviews")
+        return {"reviews": [], "average": None, "total": 0, "unanswered": 0,
+                "blocked": (f"{cap.reason} {cap.fix}".strip() if cap
+                            else str(exc)[:300]),
+                "link": cap.link if cap else ""}
+
+    out = []
+    for r in raw:
+        reply = r.get("reviewReply") or {}
+        out.append({
+            "name": r.get("name", ""),
+            "reviewer": (r.get("reviewer") or {}).get("displayName", "Someone"),
+            "photo": (r.get("reviewer") or {}).get("profilePhotoUrl", ""),
+            "stars": STARS.get(r.get("starRating", ""), 0),
+            "comment": r.get("comment", "") or "",
+            "when": r.get("createTime", ""),
+            "reply": reply.get("comment"),
+            "replied_when": reply.get("updateTime"),
+        })
+    scored = [r["stars"] for r in out if r["stars"]]
+    return {
+        "reviews": out,
+        "average": round(sum(scored) / len(scored), 2) if scored else None,
+        "total": len(out),
+        "unanswered": len([r for r in out if not r["reply"]]),
+        "blocked": None, "link": "",
+    }
+
+
+class ReplyBody(BaseModel):
+    name: str
+    comment: str
+
+
+@app.post("/api/reviews/{location:path}/reply")
+def send_reply(location: str, body: ReplyBody, request: Request) -> dict:
+    """Publish one reply. The only write in the app that is not a CLI job,
+    because a reply is a single call the operator has already read and edited."""
+    guard(request)
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "that profile is not connected")
+    if not body.comment.strip():
+        raise HTTPException(400, "an empty reply is not a reply")
+    try:
+        client = Client(auth.credentials(interactive=False))
+        client.reply_to_review(body.name, body.comment.strip())
+    except ApiError as exc:
+        raise HTTPException(502, str(exc)[:400])
+    db.record_action(location, "review_reply", body.name,
+                     body.comment.strip()[:500])
+    return {"ok": True}
+
+
+class DraftBody(BaseModel):
+    name: str
+
+
+@app.post("/api/reviews/{location:path}/draft")
+def draft_reply(location: str, body: DraftBody, request: Request) -> dict:
+    """Write a reply for one review, without sending it."""
+    guard(request)
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "that profile is not connected")
+
+    from gbp import reviews as reviews_mod
+
+    merged = profiles.settings_for(dict(cfg()), location)
+    try:
+        client = Client(auth.credentials(interactive=False))
+        raw = client.reviews(profile["account"], split_location_id(location))
+        review = next((r for r in raw if r.get("name") == body.name), None)
+        if review is None:
+            raise HTTPException(404, "no such review")
+    except AuthError as exc:
+        raise HTTPException(401, str(exc))
+    except ApiError as exc:
+        raise HTTPException(502, str(exc)[:400])
+
+    try:
+        draft = reviews_mod.draft_reply(review, merged)
+    except Exception as exc:
+        raise HTTPException(502, f"Could not write a reply: {exc}"[:400])
+
+    stars = STARS.get(review.get("starRating", ""), 0)
+    hold_below = int((merged.get("reviews", {}) or {}).get("hold_below", 4))
+    held = bool(stars and stars < hold_below)
+    return {
+        "draft": draft,
+        "held": bool(held),
+        "why": ("A low-star review is a conversation with an upset customer. "
+                "Read this carefully, and change it to something you would "
+                "actually say." if held else ""),
+    }
 
 
 @app.get("/api/activity/{location:path}")

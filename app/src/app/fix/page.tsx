@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import ActionPage, { Toggle } from "@/components/ActionPage";
 import { useApp } from "@/components/Shell";
-import { Card, Empty, Pill } from "@/components/ui";
+import { Card, Empty, Chip } from "@/components/ui";
 import { api, Audit } from "@/lib/api";
 
 const FIXERS = [
@@ -44,7 +44,7 @@ export default function FixPage() {
             honest answer is a judgement about the business.
           </p>
           <p>
-            <strong className="text-ink">It never invents a fact.</strong> The
+            <strong className="text-g-grey900">It never invents a fact.</strong> The
             description is built from what is already on the profile, the business&apos;s
             own website, and the facts you list in Settings. It will not claim a
             founding year, a certification or a price it was not given.
@@ -52,8 +52,8 @@ export default function FixPage() {
         </>
       }
       controls={
-        <div className="rounded-lg bg-panel-2 p-3.5">
-          <div className="text-xs uppercase tracking-wider text-ink-3 mb-2.5">
+        <div className="rounded-lg bg-g-grey100 p-3.5">
+          <div className="text-xs uppercase tracking-wider text-g-grey600 mb-2.5">
             What to include
           </div>
           {FIXERS.map(([key, label, hint]) => (
@@ -76,12 +76,12 @@ export default function FixPage() {
         ) : (
           <div className="space-y-2">
             {pending.map((f) => (
-              <div key={f.rule_id} className="p-3 rounded-lg bg-panel-2">
+              <div key={f.rule_id} className="p-3 rounded-lg bg-g-grey100">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="font-medium text-sm">{f.title}</span>
-                  <Pill tone="good">auto</Pill>
+                  <Chip tone="green">auto</Chip>
                 </div>
-                <div className="text-xs text-ink-3">{f.detail}</div>
+                <div className="text-xs text-g-grey600">{f.detail}</div>
               </div>
             ))}
           </div>
@@ -89,10 +89,10 @@ export default function FixPage() {
       </Card>
 
       <Card title="Before anything is written">
-        <ul className="text-sm text-ink-2 space-y-1.5 list-disc pl-5">
+        <ul className="text-sm text-g-grey700 space-y-1.5 list-disc pl-5">
           <li>Preview shows the exact before and after for every change.</li>
           <li>
-            Services are <strong className="text-ink">proposals</strong>. A search term
+            Services are <strong className="text-g-grey900">proposals</strong>. A search term
             proves people looked for something; it does not prove this business offers
             it. Read them before applying.
           </li>

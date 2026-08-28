@@ -2,7 +2,7 @@
 
 import { ReactNode } from "react";
 import { useApp } from "@/components/Shell";
-import { Button, Card, Empty } from "@/components/ui";
+import { Banner, Button, Card, Empty } from "@/components/ui";
 
 /**
  * The shape every "do a thing" screen shares: explain it, offer the controls,
@@ -32,13 +32,13 @@ export default function ActionPage({
   if (!active) return <Empty>Pick a business first.</Empty>;
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-4 max-w-4xl">
       <Card title={title}>
-        <div className="text-sm text-ink-2 space-y-2 mb-4">{lead}</div>
+        <div className="mb-4 space-y-2 text-sm text-g-grey700">{lead}</div>
         {controls}
         <div className="flex gap-2 flex-wrap mt-4">
           <Button
-            kind="primary"
+            kind="filled"
             disabled={running || disabled}
             title={disabledWhy}
             onClick={() => run(command, options, false)}
@@ -47,7 +47,7 @@ export default function ActionPage({
           </Button>
           {writes && (
             <Button
-              kind="write"
+              kind="danger"
               disabled={running || disabled}
               title={disabledWhy}
               onClick={() => {
@@ -66,12 +66,12 @@ export default function ActionPage({
           )}
         </div>
         {writes && (
-          <p className="text-xs text-ink-3 mt-3">
+          <p className="mt-3 text-[12.5px] text-g-grey600">
             Preview shows exactly what would change and writes nothing.
           </p>
         )}
         {disabled && disabledWhy && (
-          <p className="text-xs text-warn mt-3">{disabledWhy}</p>
+          <p className="mt-3 text-[12.5px] text-[#b06000]">{disabledWhy}</p>
         )}
       </Card>
       {children}

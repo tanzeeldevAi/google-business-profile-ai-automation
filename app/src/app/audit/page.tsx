@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/components/Shell";
-import { Button, Card, Dial, Empty, Pill } from "@/components/ui";
+import { Button, Card, Chip, Dial, Empty, SEVERITY_TONE } from "@/components/ui";
 import {
   ago, api, Audit, CATEGORY_LABELS, Finding, SEVERITY_ORDER, SEVERITY_STYLE,
 } from "@/lib/api";
@@ -38,14 +38,14 @@ export default function AuditPage() {
           <div>
             <div className="text-xl font-semibold">{audit?.grade || "Not audited yet"}</div>
             {audit && (
-              <div className="text-sm text-ink-2">
+              <div className="text-sm text-g-grey700">
                 {groups.issues.length} issues · {groups.passed.length} already correct ·{" "}
                 {groups.skipped.length} not checked · {ago(audit.when)}
               </div>
             )}
           </div>
           <div className="ml-auto">
-            <Button kind="primary" disabled={running} onClick={() => run("audit")}>
+            <Button kind="filled" disabled={running} onClick={() => run("audit")}>
               Re-run the audit
             </Button>
           </div>
@@ -58,7 +58,7 @@ export default function AuditPage() {
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-1.5 rounded-lg text-sm border transition ${
-              tab === t ? "bg-panel-2 border-accent" : "border-line text-ink-2 hover:text-ink"
+              tab === t ? "bg-g-grey100 border-accent" : "border-g-grey300 text-g-grey700 hover:text-ink"
             }`}
           >
             {t === "issues"
@@ -83,10 +83,10 @@ export default function AuditPage() {
 
       {tab === "passed" && (
         <Card>
-          <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm text-ink-2">
+          <ul className="grid sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm text-g-grey700">
             {groups.passed.map((f) => (
               <li key={f.rule_id} className="flex gap-2">
-                <span className="text-good shrink-0">✓</span>
+                <span className="text-g-green shrink-0">✓</span>
                 {f.title}
               </li>
             ))}
@@ -96,15 +96,15 @@ export default function AuditPage() {
 
       {tab === "skipped" && (
         <Card>
-          <p className="text-sm text-ink-3 mb-3">
+          <p className="text-sm text-g-grey600 mb-3">
             These were not counted against the score. A section that could not be read
             is never reported as a failure.
           </p>
           <ul className="text-sm space-y-1.5">
             {groups.skipped.map((f) => (
               <li key={f.rule_id}>
-                <span className="text-ink">{f.title}</span>
-                <span className="text-ink-3"> — {f.detail}</span>
+                <span className="text-g-grey900">{f.title}</span>
+                <span className="text-g-grey600"> — {f.detail}</span>
               </li>
             ))}
           </ul>
@@ -116,28 +116,24 @@ export default function AuditPage() {
 
 function FindingCard({ f }: { f: Finding }) {
   return (
-    <div className="rounded-xl border border-line bg-panel p-4">
+    <div className="rounded-xl border border-g-grey300 bg-white p-4">
       <div className="flex items-center gap-2.5 flex-wrap mb-2">
-        <span
-          className={`text-[10.5px] uppercase tracking-wider px-2 py-0.5 rounded border ${SEVERITY_STYLE[f.severity]}`}
-        >
-          {f.severity}
-        </span>
+        <Chip tone={SEVERITY_TONE[f.severity]}>{f.severity}</Chip>
         <h3 className="font-semibold">{f.title}</h3>
-        {f.fixable && <Pill tone="good">automated</Pill>}
-        <span className="ml-auto text-xs text-ink-3">
+        {f.fixable && <Chip tone="green">automated</Chip>}
+        <span className="ml-auto text-xs text-g-grey600">
           {CATEGORY_LABELS[f.category] || f.category}
         </span>
       </div>
       <p className="text-sm font-medium mb-2">{f.detail}</p>
-      <p className="text-sm text-ink-2 mb-1.5">
-        <strong className="text-ink">Why it matters.</strong> {f.why}
+      <p className="text-sm text-g-grey700 mb-1.5">
+        <strong className="text-g-grey900">Why it matters.</strong> {f.why}
       </p>
-      <p className="text-sm text-ink-2">
-        <strong className="text-ink">What to do.</strong> {f.fix}
+      <p className="text-sm text-g-grey700">
+        <strong className="text-g-grey900">What to do.</strong> {f.fix}
       </p>
       {f.command && (
-        <p className="text-xs text-ink-3 mt-2">
+        <p className="text-xs text-g-grey600 mt-2">
           Handled by <code>{f.command}</code>
         </p>
       )}

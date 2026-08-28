@@ -52,7 +52,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-5 max-w-3xl">
       <Card title={`Settings for ${active.title}`}>
-        <p className="text-sm text-ink-2">
+        <p className="text-sm text-g-grey700">
           These belong to this business. Thresholds, the model and rate limits live in{" "}
           <code>config.yaml</code> and are shared by everything.
         </p>
@@ -79,8 +79,8 @@ export default function SettingsPage() {
       </Card>
 
       <Card title="Confirmed facts">
-        <p className="text-sm text-ink-2 mb-3">
-          <strong className="text-ink">The only claims the writer may make.</strong> One
+        <p className="text-sm text-g-grey700 mb-3">
+          <strong className="text-g-grey900">The only claims the writer may make.</strong> One
           per line. If a detail is not here and not on the website, it will not appear in
           a description, a post or a review reply.
         </p>
@@ -123,9 +123,9 @@ export default function SettingsPage() {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button kind="primary" onClick={save}>Save</Button>
-        {saved && <span className="text-sm text-good">Saved.</span>}
-        {error && <span className="text-sm text-bad">{error}</span>}
+        <Button kind="filled" onClick={save}>Save</Button>
+        {saved && <span className="text-sm text-g-green">Saved.</span>}
+        {error && <span className="text-sm text-g-red">{error}</span>}
       </div>
     </div>
   );
@@ -141,13 +141,13 @@ function Text({
 }) {
   return (
     <label className="block mb-3">
-      <span className="text-sm text-ink-2">{label}</span>
+      <span className="text-sm text-g-grey700">{label}</span>
       <input
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg bg-base border border-line px-3 py-2 text-sm outline-none focus:border-accent"
+        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm outline-none focus:border-accent"
       />
     </label>
   );
@@ -165,15 +165,15 @@ function Area({
 }) {
   return (
     <label className="block mb-3">
-      {label && <span className="text-sm text-ink-2">{label}</span>}
+      {label && <span className="text-sm text-g-grey700">{label}</span>}
       <textarea
         rows={rows}
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg bg-base border border-line px-3 py-2 text-sm font-mono outline-none focus:border-accent resize-y"
+        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm font-mono outline-none focus:border-accent resize-y"
       />
-      {hint && <span className="text-xs text-ink-3 block mt-1">{hint}</span>}
+      {hint && <span className="text-xs text-g-grey600 block mt-1">{hint}</span>}
     </label>
   );
 }

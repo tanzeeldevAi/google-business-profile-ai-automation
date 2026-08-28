@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import ActionPage, { Field, Toggle } from "@/components/ActionPage";
 import { useApp } from "@/components/Shell";
-import { Card, Empty, Pill } from "@/components/ui";
+import { Card, Empty, Chip } from "@/components/ui";
 import { ago, api } from "@/lib/api";
 
 export default function PostsPage() {
@@ -49,23 +49,23 @@ export default function PostsPage() {
           </p>
           <p>
             Posts rotate through the service pages you list in Settings, least recently
-            used first, and each one is written <strong className="text-ink">from that
+            used first, and each one is written <strong className="text-g-grey900">from that
             page</strong> — same scope, same inclusions, same words for things.
           </p>
         </>
       }
       controls={
-        <div className="rounded-lg bg-panel-2 p-3.5">
+        <div className="rounded-lg bg-g-grey100 p-3.5">
           {pages.length > 0 && (
             <div className="mb-3">
-              <div className="text-xs uppercase tracking-wider text-ink-3 mb-2">
+              <div className="text-xs uppercase tracking-wider text-g-grey600 mb-2">
                 Write from a specific page
               </div>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   onClick={() => setUrl("")}
                   className={`text-xs px-2.5 py-1 rounded border ${
-                    url === "" ? "border-accent bg-panel" : "border-line text-ink-3"
+                    url === "" ? "border-accent bg-white" : "border-g-grey300 text-g-grey600"
                   }`}
                 >
                   rotate automatically
@@ -75,7 +75,7 @@ export default function PostsPage() {
                     key={p}
                     onClick={() => setUrl(p)}
                     className={`text-xs px-2.5 py-1 rounded border truncate max-w-xs ${
-                      url === p ? "border-accent bg-panel" : "border-line text-ink-3"
+                      url === p ? "border-accent bg-white" : "border-g-grey300 text-g-grey600"
                     }`}
                     title={p}
                   >
@@ -119,11 +119,11 @@ export default function PostsPage() {
       }
     >
       <Card title="The grounding guard">
-        <p className="text-sm text-ink-2">
+        <p className="text-sm text-g-grey700">
           Every number in a draft is checked against the source page and your confirmed
           facts. An invented price, timeframe or percentage triggers a rewrite, and after
           three attempts the post is{" "}
-          <strong className="text-ink">refused rather than published</strong>. That is
+          <strong className="text-g-grey900">refused rather than published</strong>. That is
           what makes &ldquo;the details must match the page&rdquo; mean something.
         </p>
       </Card>
@@ -134,15 +134,15 @@ export default function PostsPage() {
         ) : (
           <div className="space-y-2">
             {posts.slice(0, 12).map((p, i) => (
-              <div key={i} className="p-3 rounded-lg bg-panel-2">
+              <div key={i} className="p-3 rounded-lg bg-g-grey100">
                 <div className="flex items-center gap-2 mb-1">
-                  <Pill tone={p.dry_run ? "dim" : "good"}>
+                  <Chip tone={p.dry_run ? "neutral" : "green"}>
                     {p.dry_run ? "draft" : "published"}
-                  </Pill>
-                  <span className="text-xs text-ink-3 truncate">{p.target}</span>
-                  <span className="text-xs text-ink-3 ml-auto shrink-0">{ago(p.when)}</span>
+                  </Chip>
+                  <span className="text-xs text-g-grey600 truncate">{p.target}</span>
+                  <span className="text-xs text-g-grey600 ml-auto shrink-0">{ago(p.when)}</span>
                 </div>
-                <p className="text-sm text-ink-2 line-clamp-3">{p.detail}</p>
+                <p className="text-sm text-g-grey700 line-clamp-3">{p.detail}</p>
               </div>
             ))}
           </div>

@@ -121,7 +121,12 @@ class Client:
                 except ValueError:
                     return {}
 
-            body = resp.text[:600]
+            # Keep enough of the body to be parseable. Google's 403 carries the
+            # reason, the project id and the exact Cloud Console link inside a
+            # JSON payload well past 600 characters, and truncating it turned a
+            # fixable "the API is switched off, here is the button" into an
+            # unreadable blob.
+            body = resp.text[:8000]
 
             if resp.status_code in RETRY_STATUS:
                 # Respect Retry-After when Google sends one, else back off.
