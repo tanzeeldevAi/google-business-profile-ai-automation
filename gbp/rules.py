@@ -41,6 +41,7 @@ HANDLED_BY = {
     "description": "run.py fix",
     "holiday_hours": "run.py fix",
     "services": "run.py fix",
+    "service_areas": "run.py fix",
     "reviews": "run.py reviews",
     "posts": "run.py post",
 }
@@ -760,19 +761,39 @@ def ct9_service_location_words(s: Snapshot, cfg: dict) -> Finding:
         if any(place in text for place in places):
             named += 1
 
-    rate = named / len(items)
-    want = float(cfg.get("min_service_location_rate", 0.5))
-    ok = rate >= want
+    # Judged on a COUNT, not a share.
+    #
+    # This asked for 50% and then advised, in its own fix text, doing only 3 to
+    # 5 because more reads as spam. On a 54-service list those two demand
+    # opposite things: 27 lines all ending in the same city name is exactly the
+    # keyword stuffing the advice warns about. A handful of location variants
+    # is the whole benefit; the rest is repetition a customer can see.
+    # A few, never most. Five is the target on a long list; on a short one it
+    # falls to half, because demanding five of six names is the same stuffing
+    # this rule exists to prevent.
+    want = min(int(cfg.get("min_services_naming_area", 5)),
+               max(1, round(len(items) / 2)))
+    ok = named >= want
+    # Too many is its own problem, and nothing was catching it.
+    stuffed = len(items) >= 8 and named / len(items) > 0.6
+    if stuffed:
+        ok = False
     return Finding(
         "CT9", "Services name the area they cover", "medium", "content", ok,
-        detail=f"{named} of {len(items)} service names mention a city or area "
-               f"you serve ({rate:.0%}).",
+        detail=(f"{named} of {len(items)} service names mention a city or area "
+                f"you serve — that is too many, and a list where most lines end "
+                f"in the same place name reads as stuffing. Aim for about "
+                f"{want}."
+                if stuffed else
+                f"{named} of {len(items)} service names mention a city or area "
+                f"you serve. Aim for at least {want}."),
         why="People search \"AC repair London\", not \"AC repair\". A service "
             "named the way the search is actually typed matches it directly, "
             "instead of relying on Google to infer the location from the pin.",
         fix="Add a location variant for your 3 to 5 main services only. Do not "
             "do it to all of them -- a services list where every line ends in "
             "the same city name reads as spam to a customer and to Google.",
+        fixable=True, fix_key="service_areas",
     )
 
 

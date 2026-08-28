@@ -589,6 +589,53 @@ def _service_has_description(item: dict) -> bool:
     return bool(label.get("description"))
 
 
+# What each fix is allowed to touch. A field mask arriving from the browser is
+# untrusted input: without this, an edited payload could rewrite any part of the
+# profile it liked. The key chooses the mask; the request never supplies one.
+FIX_MASKS = {
+    "description": "profile.description",
+    "services": "serviceItems",
+    "service_areas": "serviceItems",
+    "holiday_hours": "specialHours",
+}
+
+
+class ApplyFix(BaseModel):
+    key: str
+    body: dict
+
+
+@app.post("/api/fix/apply/{location:path}")
+def apply_fix(location: str, payload: ApplyFix, request: Request) -> dict:
+    """Write one fix, using content the operator may have edited.
+
+    The plan is a proposal, not an instruction. Descriptions get reworded and
+    proposed services get struck out before anything is sent, so what actually
+    reaches Google is whatever came back from the screen -- not whatever the
+    model first wrote.
+    """
+    guard(request)
+    mask = FIX_MASKS.get(payload.key)
+    if not mask:
+        raise HTTPException(400, f"'{payload.key}' is not a fix this can apply")
+    if not payload.body:
+        raise HTTPException(400, "nothing to write")
+
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "no such business")
+
+    try:
+        client = Client(auth.credentials(interactive=False))
+        client.patch_location(location, payload.body, mask)
+    except (ApiError, AuthError) as exc:
+        raise HTTPException(502, str(exc))
+
+    db.record_action(location, "fix", payload.key,
+                     json.dumps(payload.body)[:500])
+    return {"ok": True, "applied": payload.key, "update_mask": mask}
+
+
 @app.get("/api/fix/plan/{location:path}")
 def fix_plan(location: str, request: Request) -> dict:
     """The exact changes the last preview would make.
@@ -610,6 +657,16 @@ def fix_plan(location: str, request: Request) -> dict:
     # while another is selected.
     if plan.get("location") and plan["location"] != location:
         return {"plan": None}
+
+    # Plans written before the payload was carried through lack the fields the
+    # editor needs. Fill them in rather than letting the screen break on an
+    # older file -- but leave `body` empty, because a fix with no payload must
+    # not look applyable when there is nothing to send.
+    for f in plan.get("fixes", []) or []:
+        f.setdefault("update_mask", "")
+        f.setdefault("body", {})
+        f.setdefault("proposed", [])
+        f.setdefault("notes", [])
     return {"plan": plan}
 
 

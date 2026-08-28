@@ -448,10 +448,142 @@ def plan_services(snap: Snapshot, cfg: dict,
     )
 
 
+# --------------------------------------------------------------- service areas
+
+def plan_service_areas(snap: Snapshot, cfg: dict,
+                       site_data: "site.Site | None" = None) -> Fix | None:
+    """Put the city into a few service names, and only a few.
+
+    The whole benefit is matching how the search is actually typed -- people
+    look for "laser hair removal Peshawar", not "laser hair removal". The
+    benefit does not scale: a list where most lines end in the same place name
+    stops reading as helpful and starts reading as stuffing, to a customer
+    before Google. So this renames the busiest handful and leaves the rest.
+
+    Which ones are "busiest" comes from the profile's own search terms where
+    they exist, not from a guess about the trade.
+    """
+    items = list(snap.location.get("serviceItems", []) or [])
+    if not items:
+        return None
+
+    place = snap.locality or ""
+    if not place:
+        return None
+
+    want = int(cfg.get("min_services_naming_area", 5))
+    already = [i for i in items if _names_place(i, place)]
+    if len(already) >= want:
+        return None
+
+    # Only free-form services can be renamed. Google's own structured types
+    # carry a fixed label that is not ours to edit.
+    free = [i for i in items if i.get("freeFormServiceItem")]
+    if not free:
+        return None
+
+    known = _places_in_profile(snap)
+    ranked = _rank_by_search_terms(free, snap)
+    picked, renamed = [], []
+    for item in ranked:
+        if len(already) + len(picked) >= want:
+            break
+        label = item["freeFormServiceItem"]["label"]
+        name = label.get("displayName", "")
+        # Skip anything that already carries a place. Appending the city to
+        # "Business Setup in Saudi Arabia" gives "...in Saudi Arabia in
+        # Khobar", which is worse than leaving it alone.
+        if not name or any(p in name.lower() for p in known):
+            continue
+        picked.append(item)
+        renamed.append((name, f"{name} in {place}"))
+
+    if not renamed:
+        return None
+
+    body_items = []
+    for item in items:
+        copy = json.loads(json.dumps(item))  # never mutate the snapshot
+        if item in picked:
+            lab = copy["freeFormServiceItem"]["label"]
+            lab["displayName"] = f"{lab.get('displayName', '')} in {place}"
+        body_items.append(copy)
+
+    notes = [f"  Renaming {len(renamed)} of {len(items)}, not all of them.",
+             "  A list where most lines end in the same city name reads as",
+             "  stuffing to a customer before it does to Google."]
+
+    return Fix(
+        key="service_areas", title="Services name the area they cover",
+        # No leading indent on the first line: `show` adds its own, and
+        # carrying one here double-indents it in the terminal.
+        before="\n".join(f"    {old}" for old, _ in renamed).lstrip(),
+        after="\n".join(f"    {new}" for _, new in renamed).lstrip(),
+        update_mask="serviceItems",
+        body={"serviceItems": body_items},
+        notes=notes,
+        proposed=[{"name": new, "description": f"was: {old}", "terms": []}
+                  for old, new in renamed],
+    )
+
+
+def _names_place(item: dict, place: str) -> bool:
+    label = (item.get("freeFormServiceItem", {}) or {}).get("label", {}) or {}
+    return place.lower() in (label.get("displayName", "") or "").lower()
+
+
+def _places_in_profile(snap: Snapshot) -> set[str]:
+    """Every place name already meaningful to this profile.
+
+    Checking only the city produced "Business Setup in Saudi Arabia in Khobar"
+    on a real profile: the name already carried a location, just not that one.
+    A service is skipped if it names ANY of these, not merely the city.
+    """
+    found = {snap.locality or ""}
+    address = snap.location.get("storefrontAddress", {}) or {}
+    found.add(address.get("administrativeArea", "") or "")
+    found.add(_country_name(address.get("regionCode", "") or ""))
+    for info in snap.get("serviceArea.places.placeInfos", []) or []:
+        found.add(info.get("placeName", "") or "")
+    return {p.lower() for p in found if p and len(p) > 2}
+
+
+# Only the countries this is likely to meet. A missing entry costs nothing --
+# the city check still runs -- so this stays short rather than pulling in a
+# dependency for a handful of lookups.
+_COUNTRY_NAMES = {
+    "SA": "Saudi Arabia", "PK": "Pakistan", "AE": "United Arab Emirates",
+    "GB": "United Kingdom", "US": "United States", "CA": "Canada",
+    "AU": "Australia", "IN": "India", "QA": "Qatar", "KW": "Kuwait",
+    "OM": "Oman", "BH": "Bahrain", "EG": "Egypt", "TR": "Turkey",
+}
+
+
+def _country_name(code: str) -> str:
+    return _COUNTRY_NAMES.get((code or "").upper(), "")
+
+
+def _rank_by_search_terms(free: list[dict], snap: Snapshot) -> list[dict]:
+    """Busiest services first, judged by the profile's own search terms."""
+    terms = [(k.get("term", "") or "").lower()
+             for k in (getattr(snap, "search_terms", None) or [])]
+    if not terms:
+        return free
+
+    def score(item: dict) -> int:
+        label = (item.get("freeFormServiceItem", {}) or {}).get("label", {}) or {}
+        name = (label.get("displayName", "") or "").lower()
+        words = {w for w in re.findall(r"[a-z]{4,}", name)}
+        return sum(1 for t in terms if words & set(re.findall(r"[a-z]{4,}", t)))
+
+    return sorted(free, key=score, reverse=True)
+
+
 # ------------------------------------------------------------------- the driver
 
 PLANNERS = {
     "description": plan_description,
+    "service_areas": plan_service_areas,
     "holiday_hours": plan_holiday_hours,
     "services": plan_services,
 }
@@ -513,6 +645,12 @@ def to_dict(fix: Fix) -> dict:
         "before": fix.before,
         "after": fix.after,
         "notes": list(fix.notes),
+        # The exact payload and field mask this fix would send. Carried through
+        # so the app can show the change, let it be edited, and send back
+        # something Google will accept -- rather than the operator having to
+        # take the tool's word for it and press apply blind.
+        "update_mask": fix.update_mask,
+        "body": fix.body,
         # Where a fix proposes several things at once, each is listed on its
         # own with the search terms that produced it -- a service on a profile
         # is a promise, and a wall of text hides that.

@@ -309,6 +309,34 @@ check("'wholesale' is not mistaken for a sale",
       and rules.ct3_description_no_links(_ct3_ws, {}).passed,
       rules.ct3_description_no_links(_ct3_ws, {}).detail)
 
+
+# CT9 demanded 50% of service names carry the city, while its own fix text
+# advised doing only 3 to 5 because more reads as spam. On a 54-service list
+# those ask for opposite things, and the percentage won: a real profile ended
+# up with 35 lines all ending "in Peshawar". Judged on a count now, with
+# over-stuffing failing in its own right.
+def _svc(name):
+    return {"freeFormServiceItem": {"label": {"displayName": name}}}
+
+def _ct9(names):
+    s = bad_snapshot()
+    s.location["serviceItems"] = [_svc(n) for n in names]
+    s.location["storefrontAddress"] = {"locality": "Peshawar"}
+    return rules.ct9_service_location_words(s, {})
+
+_plain = [f"Service {i}" for i in range(54)]
+check("no service naming the area fails",
+      not _ct9(_plain).passed)
+check("a handful naming the area is enough, even in a long list",
+      _ct9([f"S{i} in Peshawar" for i in range(5)] + _plain[5:]).passed)
+check("naming the area on most of a long list is stuffing, and fails",
+      not _ct9([f"S{i} in Peshawar" for i in range(35)] + _plain[35:]).passed,
+      _ct9([f"S{i} in Peshawar" for i in range(35)] + _plain[35:]).detail)
+check("a short list is not held to a count it cannot reach",
+      _ct9(["Only one in Peshawar"]).passed)
+check("CT9 now declares itself fixable",
+      _ct9(_plain).fixable and _ct9(_plain).fix_key == "service_areas")
+
 print(f"\n  {pass_count} passed, {len(fails)} failed\n")
 for f in fails:
     print(f"  x {f}")

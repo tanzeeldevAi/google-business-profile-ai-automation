@@ -51,7 +51,11 @@ def clean(text: str) -> str:
     t = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"\1", t)
     t = re.sub(r"^#+\s*", "", t, flags=re.M)
     # Em and en dashes read as AI punctuation in a short business reply.
-    t = t.replace("—", ", ").replace("–", "-")
+    # The spaces around the dash have to go with it. Replacing the dash
+    # alone turned "words — glad" into "words , glad", and that was on its
+    # way onto a live client profile.
+    t = re.sub(r"\s*—\s*", ", ", t)
+    t = re.sub(r"\s*–\s*", " - ", t)
     t = t.replace("“", '"').replace("”", '"')
     t = t.replace("‘", "'").replace("’", "'")
     t = re.sub(r"[ \t]+", " ", t)

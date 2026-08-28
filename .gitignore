@@ -46,3 +46,4 @@ desktop.ini
 app/tsconfig.tsbuildinfo
 data/plans/
 data/categories/
+config.yaml.bak

@@ -741,7 +741,7 @@ def main() -> int:
     p.add_argument("--services-file", help="JSON price list to build services from")
 
     p = add("fix", cmd_fix, "apply the automatic fixes", apply_flag=True)
-    p.add_argument("--only", help="comma-separated: description,holiday_hours,services")
+    p.add_argument("--only", help="comma-separated: description,holiday_hours,services,service_areas")
 
     p = add("reviews", cmd_reviews, "reply to unanswered reviews", apply_flag=True)
     p.add_argument("--include-held", action="store_true",

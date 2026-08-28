@@ -86,6 +86,10 @@ export type PlannedFix = {
   after: string;
   notes: string[];
   proposed: { name: string; description: string; terms: string[] }[];
+  // The exact payload and field mask this fix would send, so the screen can
+  // show it, let it be edited, and send back something Google will accept.
+  update_mask: string;
+  body: Record<string, unknown>;
 };
 
 export type FixPlan = {
@@ -207,6 +211,10 @@ export const api = {
       }),
   authStart: () => call<{ url: string }>("/api/auth/start"),
   signOut: () => call<{ signed_out: boolean }>("/api/auth/signout", { method: "POST" }),
+  applyFix: (location: string, key: string, body: Record<string, unknown>) =>
+    call<{ ok: boolean; applied: string; update_mask: string }>(
+      `/api/fix/apply/${location}`,
+      { method: "POST", body: JSON.stringify({ key, body }) }),
   profiles: () => call<{ profiles: Profile[]; active: string }>("/api/profiles"),
   discover: () =>
     call<{ found: { location: string; title: string; city: string }[]; active: string }>(
