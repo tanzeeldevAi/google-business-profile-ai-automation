@@ -11,6 +11,8 @@ call to action is an advert with no way to respond.
 from __future__ import annotations
 
 import random
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +25,26 @@ CTA_TYPES = {"BOOK", "ORDER", "SHOP", "LEARN_MORE", "SIGN_UP", "CALL"}
 
 MAX_POST_CHARS = 1500
 
+# A run of digits long enough to be a phone number, in any of the shapes a
+# Pakistani or international number gets written in.
+_PHONE = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{8,}\d)(?!\d)")
+
+# A phone number carries at least nine digits. The shape alone is not enough to
+# tell one from a date: "2026-08-28" matches the pattern above but holds only
+# eight, and blocking a post for mentioning a date would be its own bug.
+_MIN_PHONE_DIGITS = 9
+
+
+def find_phone_numbers(text: str) -> list[str]:
+    """Every phone number in the text, dates and short figures excluded."""
+    out = []
+    for match in _PHONE.finditer(text):
+        found = match.group(0).strip()
+        if sum(c.isdigit() for c in found) >= _MIN_PHONE_DIGITS:
+            out.append(found)
+    return out
+
+
 SYSTEM = """You write Google Business Profile posts for a local business.
 
 Voice: the owner, writing quickly and plainly. Useful first, promotional never.
@@ -34,6 +56,10 @@ Hard rules:
   name.
 - Give one genuinely useful specific thing: what to check, what it costs
   roughly, how long it takes, what goes wrong when it is left.
+- NEVER put a phone number in the post. Google rejects the whole post for it,
+  silently, after it appears to publish. The call button on the profile is how
+  people ring. This is not a style preference, it is the difference between a
+  post that exists and one that does not.
 - No superlatives, no "we are proud to", no hashtags, no emoji, no links in the
   body (the button handles that).
 - Never invent a price, a guarantee, an award or a statistic. If you were not
@@ -177,18 +203,38 @@ def draft(snap: Snapshot, topic: str, cfg: dict,
             dot = cut.rfind(". ")
             text = (cut[:dot + 1] if dot > 600 else cut).strip()
 
+        # A phone number gets the whole post rejected by Google, silently,
+        # after it looks like it published. Caught here so the writer rewrites
+        # the sentence properly, rather than having the number cut out later
+        # and left reading "Call us at today".
+        phones = find_phone_numbers(text)
         bad = site.unverified_numbers(text, sources) if sources.strip() else []
-        if not bad:
+        if not bad and not phones:
             return text, []
 
-        problems = [f"uses a number that is not on the source page or in your "
-                    f"confirmed facts: {', '.join(bad)}"]
+        problems = []
+        if phones:
+            problems.append(f"contains a phone number ({phones[0]}), which "
+                            f"makes Google reject the whole post")
+        if bad:
+            problems.append(f"uses a number that is not on the source page or "
+                            f"in your confirmed facts: {', '.join(bad)}")
+
         if attempt < 2:
-            prompt = (base + ask + f"\n\nYour previous attempt used these "
-                      f"numbers, which do not appear in the source above: "
-                      f"{', '.join(bad)}. Write it again without them. Do not "
-                      f"substitute different numbers -- write the sentence "
-                      f"without a figure at all.")
+            retry = base + ask
+            if phones:
+                retry += ("\n\nYour previous attempt included a phone number. "
+                          "Google rejects any post that contains one. Write it "
+                          "again with no phone number anywhere, and do not "
+                          "replace it with a line telling people to call a "
+                          "number -- the profile already has a call button.")
+            if bad:
+                retry += (f"\n\nYour previous attempt used these numbers, which "
+                          f"do not appear in the source above: "
+                          f"{', '.join(bad)}. Write it again without them. Do "
+                          f"not substitute different numbers -- write the "
+                          f"sentence without a figure at all.")
+            prompt = retry
 
     return text, problems
 
@@ -293,6 +339,77 @@ def show(d: PostDraft) -> None:
     print()
 
 
+def strip_phone_numbers(text: str) -> tuple[str, int]:
+    """Remove phone numbers from post text.
+
+    Learned the hard way on a live profile: a post carrying a booking number
+    came back REJECTED from Google while every other post on the same profile
+    was LIVE. Nothing in the API response said so -- the create call returned
+    200 and the tool printed "posted". The prompt now forbids it, but a prompt
+    is a request rather than a guarantee, so it is enforced here too.
+    """
+    removed = 0
+
+    def drop(match: "re.Match[str]") -> str:
+        nonlocal removed
+        found = match.group(0)
+        if sum(c.isdigit() for c in found) < _MIN_PHONE_DIGITS:
+            return found  # a date, not a number anyone can ring
+        removed += 1
+        return ""
+
+    cleaned = _PHONE.sub(drop, text)
+    # Tidy the wreckage a removal leaves: "Bookings on ." and stray gaps.
+    cleaned = re.sub(r"[ \t]*[:\-]?[ \t]*\.", ".", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    # Drop any line that only ever existed to carry the number.
+    keep = []
+    for line in cleaned.split("\n"):
+        bare = line.strip().rstrip(".").strip().lower()
+        if bare in {"", "bookings", "bookings on", "booking", "call us",
+                    "call us on", "call", "contact us"} and line.strip():
+            continue
+        keep.append(line)
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(keep))
+    return cleaned.strip(), removed
+
+
+def verify_state(client: Client, account: str, location_id: str,
+                 name: str = "", *, wait: float = 25.0) -> str:
+    """What Google actually did with the post that was just sent.
+
+    A 200 from the create call means "accepted for processing", not
+    "published". A post can come back REJECTED moments later, and nothing in
+    the create response says so.
+
+    Google returns PROCESSING first and settles a second or two later, so this
+    waits for a verdict rather than reporting the first thing it sees. Calling
+    PROCESSING a failure would be its own bug -- and was, briefly.
+    """
+    deadline = time.monotonic() + wait
+    state = ""
+    while True:
+        try:
+            posts = client.local_posts(account, location_id)
+        except ApiError:
+            return state
+        found = ""
+        if name:
+            for post in posts:
+                if post.get("name") == name:
+                    found = post.get("state", "")
+                    break
+        if not found and posts:
+            found = posts[0].get("state", "")
+        state = found or state
+
+        if state and state != "PROCESSING":
+            return state
+        if time.monotonic() >= deadline:
+            return state
+        time.sleep(2.0)
+
+
 def apply(d: PostDraft, client: Client, account: str, location_name: str,
           location_id: str, *, dry_run: bool = True,
           language: str = "en", force: bool = False) -> bool:
@@ -304,15 +421,40 @@ def apply(d: PostDraft, client: Client, account: str, location_name: str,
         db.record_action(location_name, "post", d.source_url or d.topic,
                          d.text[:500], dry_run=True)
         return False
+    cleaned, removed = strip_phone_numbers(d.text)
+    if removed:
+        print(f"  ! removed {removed} phone number(s) from the text -- "
+              f"Google rejects posts that contain one.")
+        d.text = cleaned
+
     try:
-        client.create_local_post(account, location_id,
-                                 to_api_body(d, language))
+        created = client.create_local_post(account, location_id,
+                                           to_api_body(d, language))
     except ApiError as exc:
         print(f"  x post failed: {exc}")
+        return False
+
+    # Google accepts the request and judges the content afterwards, so a 200
+    # here is not yet a published post.
+    state = verify_state(client, account, location_id,
+                         (created or {}).get("name", ""))
+    if state == "PROCESSING" or not state:
+        print("  ~ posted. Google is still processing it, so it is not "
+              "confirmed live yet. Check the profile in a minute.")
+        db.record_action(location_name, "post", d.source_url or d.topic,
+                         d.text[:500])
+        return True
+
+    if state != "LIVE":
+        print(f"  x Google returned the post as {state}, so it is NOT on the "
+              f"profile. Nothing here retries automatically -- the content "
+              f"needs changing first.")
+        db.record_action(location_name, "post", d.source_url or d.topic,
+                         f"[{state}] {d.text[:480]}")
         return False
     # Recorded against the source URL when there is one, so the rotation over
     # service pages knows which page has had its turn.
     db.record_action(location_name, "post", d.source_url or d.topic,
                      d.text[:500])
-    print("  + posted.")
+    print(f"  + posted{' and confirmed LIVE' if state == 'LIVE' else ''}.")
     return True

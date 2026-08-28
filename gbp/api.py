@@ -19,6 +19,8 @@ data; that is audit.py's job.
 """
 from __future__ import annotations
 
+import json
+import re
 import time
 from datetime import date
 from typing import Any, Iterator
@@ -62,6 +64,14 @@ class ApiError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.body = body
+
+
+_CATEGORY_CACHE: dict[str, list[dict]] = {}
+
+
+def _category_cache_path(key: str):
+    from . import config
+    return config.DATA_DIR / "categories" / f"{key}.json"
 
 
 class Client:
@@ -223,14 +233,86 @@ class Client:
              "languageCode": language_code, "pageSize": 100},
         ))
 
+    def all_categories(self, region_code: str,
+                       language_code: str = "en") -> list[dict]:
+        """Every category Google offers in this country.
+
+        There is no server-side search. `categories:search` is a v4 endpoint
+        that no longer exists and returns a 404 HTML page, and the v1 `filter`
+        parameter only does exact matches on displayName -- asking it for
+        "makeup" returns nothing at all, which reads as "no such category"
+        when the truth is "wrong query shape". So the whole list is paged once
+        and searched here.
+        """
+        key = f"{region_code}-{language_code}"
+        cached = _CATEGORY_CACHE.get(key)
+        if cached:
+            return cached
+
+        # 4,000 categories is 41 round trips. Doing that once per keystroke in
+        # a category picker would be unusable, so it is cached in memory and on
+        # disk. The list changes perhaps a few times a year.
+        path = _category_cache_path(key)
+        if path.exists():
+            try:
+                disk = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(disk, list) and disk:
+                    _CATEGORY_CACHE[key] = disk
+                    return disk
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        out: list[dict] = []
+        token = None
+        for _ in range(60):  # ~4,000 categories at 100 a page, with headroom
+            params = {"regionCode": region_code, "languageCode": language_code,
+                      "view": "BASIC", "pageSize": 100}
+            if token:
+                params["pageToken"] = token
+            page = self.request("GET", f"{HOSTS['info']}/categories",
+                                params=params)
+            out += page.get("categories", []) or []
+            token = page.get("nextPageToken")
+            if not token:
+                break
+
+        if out:
+            _CATEGORY_CACHE[key] = out
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(out), encoding="utf-8")
+            except OSError:
+                pass  # a cache that cannot be written is not worth failing over
+        return out
+
     def search_categories(self, query: str, region_code: str,
                           language_code: str = "en", limit: int = 10) -> list[dict]:
-        page = self.request(
-            "GET", f"{HOSTS['info']}/categories:search",
-            params={"query": query, "regionCode": region_code,
-                    "languageCode": language_code, "pageSize": limit},
-        )
-        return page.get("categories", []) or []
+        """Categories whose name contains `query`, best match first.
+
+        Punctuation is ignored on both sides. Google writes "Make-up artist"
+        with a hyphen, so a search for "makeup" would otherwise come back empty
+        and read as "Google has no makeup category" -- which is exactly the
+        wrong conclusion to hand someone editing a live profile.
+        """
+        def flatten(text: str) -> str:
+            # Separators are dropped, not turned into spaces: Google writes
+            # "Make-up artist", and a search for "makeup" must still find it.
+            return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+        needle = flatten(query)
+        if not needle:
+            return []
+        scored = []
+        for cat in self.all_categories(region_code, language_code):
+            name = flatten(cat.get("displayName") or "")
+            if needle not in name:
+                continue
+            # Exact, then starts-with, then contains -- so "beauty salon"
+            # outranks "beauty products vending machine".
+            rank = 0 if name == needle else 1 if name.startswith(needle) else 2
+            scored.append((rank, len(name), cat))
+        scored.sort(key=lambda x: (x[0], x[1]))
+        return [c for _r, _l, c in scored[:limit]]
 
     def google_updates(self, location: str) -> dict:
         """Edits Google has applied or is proposing to the profile. This is the

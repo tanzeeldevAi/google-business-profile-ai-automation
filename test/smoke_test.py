@@ -155,6 +155,9 @@ class FakeClient:
         self.patches = []
         self.replies = []
         self.posts = []
+        # What Google says it did with a post. Real profiles return LIVE,
+        # PROCESSING or REJECTED.
+        self.post_state = "LIVE"
 
     def patch_location(self, location, body, update_mask):
         self.patches.append((location, body, update_mask))
@@ -166,7 +169,16 @@ class FakeClient:
 
     def create_local_post(self, account, location_id, body):
         self.posts.append(body)
-        return {}
+        name = f"{account}/locations/{location_id}/localPosts/{len(self.posts)}"
+        return {"name": name, "state": self.post_state}
+
+    def local_posts(self, account, location_id):
+        """Publishing checks this, because Google returns 200 on create and
+        then decides whether to reject the post. The fake has to model that or
+        the check goes untested."""
+        return [{"name": f"{account}/locations/{location_id}/localPosts/{i + 1}",
+                 "state": self.post_state, "summary": b.get("summary", "")}
+                for i, b in reversed(list(enumerate(self.posts)))]
 
 
 fc = FakeClient()
@@ -469,6 +481,31 @@ posts.apply(draft, fc3, "accounts/1", LOC, "111", dry_run=True)
 check("post dry run publishes nothing", not fc3.posts)
 posts.apply(draft, fc3, "accounts/1", LOC, "111", dry_run=False)
 check("apply publishes the post", len(fc3.posts) == 1)
+
+# A post that Google rejects must NOT be reported as published. This cost a
+# live post on a real client profile: the create call returned 200, the tool
+# printed "posted", and the profile showed nothing.
+_fc_rej = FakeClient()
+_fc_rej.post_state = "REJECTED"
+_rej_draft = posts.PostDraft(topic="t", text="Body of the post.",
+                             cta_type="LEARN_MORE", cta_url="https://example.com")
+_ok = posts.apply(_rej_draft, _fc_rej, "accounts/1", LOC, "111", dry_run=False)
+check("a REJECTED post is reported as a failure, not a success", _ok is False)
+
+_fc_live = FakeClient()
+_live_draft = posts.PostDraft(topic="t", text="Body of the post.",
+                              cta_type="LEARN_MORE", cta_url="https://example.com")
+check("a LIVE post is still reported as published",
+      posts.apply(_live_draft, _fc_live, "accounts/1", LOC, "111",
+                  dry_run=False) is True)
+
+# The whole reason the post was rejected.
+_phone_draft = posts.PostDraft(topic="t", text="Ring us on 0327 0155503 today.",
+                               cta_type="LEARN_MORE", cta_url="https://example.com")
+posts.apply(_phone_draft, FakeClient(), "accounts/1", LOC, "111", dry_run=False)
+check("a phone number is stripped before publishing",
+      "0327" not in _phone_draft.text, _phone_draft.text)
+
 
 print("\n" + "=" * 68)
 print("6b. POSTS FROM SERVICE PAGES")

@@ -17,12 +17,14 @@ Everything that writes is a DRY RUN unless you add --apply.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import traceback
 from datetime import datetime, timezone
 
 from gbp import (api, audit as audit_mod, auth, citations, competitors, config,
+                 details,
                  dashboard as dash,
                  clock, dataforseo as dfs, db, fix as fix_mod, holidays, images,
                  keywords as kw_mod, llm, posts, profiles, report, reviews,
@@ -268,6 +270,65 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def cmd_details(args) -> int:
+    """Address, categories and the service list: the facts only a person knows.
+
+    Everything is planned first and shown as a before and after. Nothing is
+    written without --apply, because this command edits the parts of a profile
+    that customers actually navigate by.
+    """
+    cfg = config.load(args.config)
+    db.init()
+    client = _client(cfg)
+    account, location = _resolve(client, cfg, args)
+    # Same rule as everywhere else: act on this business's settings only.
+    cfg = profiles.settings_for(dict(cfg), location)
+
+    mask = ("name,title,categories,storefrontAddress,phoneNumbers,websiteUri,"
+            "serviceItems")
+    snap = client.location(location, read_mask=mask)
+
+    changes = []
+    if args.address:
+        change = details.plan_address(snap, args.address)
+        if change:
+            changes.append(change)
+
+    if args.primary_category or args.categories:
+        extra = ([c.strip() for c in args.categories.split(",") if c.strip()]
+                 if args.categories else None)
+        change = details.plan_categories(
+            snap, primary=args.primary_category or "", additional=extra)
+        if change:
+            changes.append(change)
+
+    changes += details.plan_simple(snap, phone=args.phone or "",
+                                   website=args.website or "")
+
+    if args.services_file:
+        with open(args.services_file, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        change = details.plan_services(snap, spec)
+        if change:
+            changes.append(change)
+
+    if not changes:
+        print("\n  Nothing to change. The profile already matches "
+              "what you asked for.\n")
+        return 0
+
+    details.show(changes)
+    written = details.apply(changes, client, location, dry_run=not args.apply)
+    if not args.apply:
+        print("  Re-run with --apply to write these to the live profile.\n")
+    else:
+        for c in changes:
+            db.record_action(location, "details", c.key, c.after[:500],
+                             dry_run=False)
+        print(f"\n  {written} of {len(changes)} change(s) written.\n")
+    return 0
+
+
 def cmd_fix(args) -> int:
     cfg = config.load(args.config)
     db.init()
@@ -294,6 +355,16 @@ def cmd_reviews(args) -> int:
     client = _client(cfg)
     account, location = _resolve(client, cfg, args)
     location_id = split_location_id(location)
+
+    # THIS business's facts, not whatever happens to be in config.yaml.
+    #
+    # Without this the review writer was handed the globally configured
+    # business and wrote replies in its voice. On a live salon in Peshawar it
+    # drafted "we're a consultancy in Al Khobar, not a hair laser remover
+    # seller" -- another client's identity, about to be published under this
+    # one's name. Review replies are public and permanent, so this merge is
+    # not optional.
+    cfg = profiles.settings_for(dict(cfg), location)
 
     try:
         all_reviews = client.reviews(account, location_id)
@@ -657,6 +728,17 @@ def main() -> int:
 
     p = add("audit", cmd_audit, "score the profile and write a report")
     p.add_argument("--no-report", action="store_true", help="skip the HTML file")
+
+    p = add("details", cmd_details,
+            "change address, categories, phone, website or the service list",
+            apply_flag=True)
+    p.add_argument("--address", help="new street line, city and postcode are kept")
+    p.add_argument("--primary-category", help="categories/gcid:...")
+    p.add_argument("--categories",
+                   help="comma-separated additional categories/gcid:...")
+    p.add_argument("--phone")
+    p.add_argument("--website")
+    p.add_argument("--services-file", help="JSON price list to build services from")
 
     p = add("fix", cmd_fix, "apply the automatic fixes", apply_flag=True)
     p.add_argument("--only", help="comma-separated: description,holiday_hours,services")

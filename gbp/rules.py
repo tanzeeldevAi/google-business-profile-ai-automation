@@ -848,11 +848,32 @@ def hr3_holiday_hours(s: Snapshot, cfg: dict) -> Finding:
             continue
         if 0 <= (when - s.now).days <= horizon:
             upcoming += 1
+    # Nothing to set is not the same as nothing set. Pakistan has no public
+    # holiday between mid-August and Christmas; flagging that as a HIGH failure
+    # sent the operator to run `fix`, which correctly did nothing, and left the
+    # finding standing with no way to clear it. A rule that cannot be satisfied
+    # is noise, and noise is what makes people stop reading an audit.
+    from . import holidays as holidays_mod
+    region = s.get("storefrontAddress.regionCode", "") or ""
+    due = holidays_mod.upcoming(region, horizon) if region else []
+
+    if not due:
+        return Finding(
+            "HR3", "Holiday hours are set ahead", "high", "hours", True,
+            detail=(f"No public holiday falls in the next {horizon} days"
+                    + (f" in {region}." if region else ".")),
+            why="Nothing to confirm yet. This becomes worth doing as soon as a "
+                "holiday comes into range.",
+            fix="", fixable=False, fix_key="holiday_hours",
+        )
+
     ok = upcoming > 0
+    names = ", ".join(name for _d, name in due[:3])
     return Finding(
         "HR3", "Holiday hours are set ahead", "high", "hours", ok,
         detail=(f"{upcoming} special-hours entry in the next {horizon} days."
-                if ok else f"Nothing set for the next {horizon} days."),
+                if ok else
+                f"Nothing set for the next {horizon} days. Coming up: {names}."),
         why="Google prompts searchers with 'hours might differ' on public holidays "
             "and pushes profiles with confirmed holiday hours above ones without. "
             "Being wrongly listed as open on a holiday also earns one-star reviews "

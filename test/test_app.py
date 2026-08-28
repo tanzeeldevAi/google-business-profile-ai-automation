@@ -239,6 +239,35 @@ check("signing out removes the saved token", _auth.sign_out())
 check("the token file is really gone", not config.TOKEN_PATH.exists())
 check("signing out twice is harmless", _auth.sign_out() is False)
 
+
+# ---------------------------------------------------------------------------
+# Google rejects any post containing a phone number, silently, AFTER the create
+# call returns 200. A live post on a real client profile was lost to this
+# before it was caught, so these lock the fix in.
+
+from gbp import posts as _posts  # noqa: E402
+
+check("a Pakistani mobile is seen as a phone number",
+      _posts.find_phone_numbers("Bookings on 0327 0155503.") == ["0327 0155503"])
+check("an international number is seen too",
+      _posts.find_phone_numbers("Call +92 327 0155503") == ["+92 327 0155503"])
+check("a price is NOT mistaken for a phone number",
+      _posts.find_phone_numbers("Barat and walima is 35,000 PKR.") == [])
+check("a price range is NOT mistaken for a phone number",
+      _posts.find_phone_numbers("19,000-27,000 PKR depending on length") == [])
+check("a date is NOT mistaken for a phone number",
+      _posts.find_phone_numbers("Offer ends 2026-08-28.") == [],
+      str(_posts.find_phone_numbers("Offer ends 2026-08-28.")))
+check("opening hours are NOT mistaken for a phone number",
+      _posts.find_phone_numbers("Open 9 to 5, seven days.") == [])
+
+_clean, _n = _posts.strip_phone_numbers("Offer ends 2026-08-28. Ring 0327 0155503 now.")
+check("stripping removes the number but keeps the date",
+      _n == 1 and "2026-08-28" in _clean and "0327" not in _clean, _clean)
+
+check("verify_state exists, so a REJECTED post cannot be reported as published",
+      callable(_posts.verify_state))
+
 print(f"\n  {pass_count} passed, {len(fails)} failed\n")
 for f_ in fails:
     print(f"  x {f_}")
