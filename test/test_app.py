@@ -193,9 +193,13 @@ try:
         except HTTPException:
             check(f"control characters refused: {nasty!r}", True)
 
-    check("only these four commands write",
+    # Deliberately an exact match, not a subset. Adding a command that writes
+    # to a live client profile should require changing this line and thinking
+    # about it, not just appending to a dict.
+    check("only these five commands write to a live profile",
           {c for c, s in COMMANDS.items() if s["writes"]}
-          == {"fix", "reviews", "post", "daily"})
+          == {"fix", "reviews", "post", "daily", "details"},
+          str(sorted(c for c, s in COMMANDS.items() if s["writes"])))
 except ImportError:
     check("fastapi is installed for the app tests", False,
           "pip install -r api/requirements.txt")
@@ -248,9 +252,9 @@ check("signing out twice is harmless", _auth.sign_out() is False)
 from gbp import posts as _posts  # noqa: E402
 
 check("a Pakistani mobile is seen as a phone number",
-      _posts.find_phone_numbers("Bookings on 0327 0155503.") == ["0327 0155503"])
+      _posts.find_phone_numbers("Bookings on 0300 1234567.") == ["0300 1234567"])
 check("an international number is seen too",
-      _posts.find_phone_numbers("Call +92 327 0155503") == ["+92 327 0155503"])
+      _posts.find_phone_numbers("Call +92 300 1234567") == ["+92 300 1234567"])
 check("a price is NOT mistaken for a phone number",
       _posts.find_phone_numbers("Barat and walima is 35,000 PKR.") == [])
 check("a price range is NOT mistaken for a phone number",
@@ -261,9 +265,9 @@ check("a date is NOT mistaken for a phone number",
 check("opening hours are NOT mistaken for a phone number",
       _posts.find_phone_numbers("Open 9 to 5, seven days.") == [])
 
-_clean, _n = _posts.strip_phone_numbers("Offer ends 2026-08-28. Ring 0327 0155503 now.")
+_clean, _n = _posts.strip_phone_numbers("Offer ends 2026-08-28. Ring 0300 1234567 now.")
 check("stripping removes the number but keeps the date",
-      _n == 1 and "2026-08-28" in _clean and "0327" not in _clean, _clean)
+      _n == 1 and "2026-08-28" in _clean and "0300" not in _clean, _clean)
 
 check("verify_state exists, so a REJECTED post cannot be reported as published",
       callable(_posts.verify_state))

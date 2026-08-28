@@ -94,6 +94,21 @@ export type FixPlan = {
   fixes: PlannedFix[];
 };
 
+export type CategoryRef = { id: string; name: string };
+
+export type ProfileDetails = {
+  title: string;
+  address_line: string;
+  locality: string;
+  postal_code: string;
+  region: string;
+  phone: string;
+  website: string;
+  primary: CategoryRef;
+  additional: CategoryRef[];
+  services: { total: number; described: number };
+};
+
 export type Review = {
   name: string;
   reviewer: string;
@@ -171,6 +186,11 @@ export const api = {
   status: () => call<Status>("/api/status"),
   capabilities: (location: string, refresh = false) =>
     call<Capabilities>(`/api/capabilities/${location}${refresh ? "?refresh=true" : ""}`),
+  details: (location: string) =>
+    call<ProfileDetails>(`/api/details/${location}`),
+  searchCategories: (q: string) =>
+    call<{ region: string; categories: CategoryRef[] }>(
+      `/api/categories?q=${encodeURIComponent(q)}`),
   fixPlan: (location: string) =>
     call<{ plan: FixPlan | null }>(`/api/fix/plan/${location}`),
   reviews: (location: string) =>

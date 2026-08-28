@@ -31,6 +31,7 @@ export const useApp = () => useContext(AppCtx);
 const NAV = [
   ["/", "Overview"],
   ["/audit", "Audit"],
+  ["/profile", "Profile"],
   ["/fix", "Fix"],
   ["/reviews", "Reviews"],
   ["/posts", "Posts"],

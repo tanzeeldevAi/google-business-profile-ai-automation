@@ -67,6 +67,12 @@ COMMANDS: dict[str, dict] = {
                                              "force": "bool"}},
     "daily":     {"writes": True,  "flags": {"with-post": "bool",
                                              "no-image": "bool"}},
+    "details":   {"writes": True,  "flags": {"address": "str",
+                                             "primary-category": "str",
+                                             "categories": "str",
+                                             "phone": "str",
+                                             "website": "str",
+                                             "services-file": "str"}},
 }
 
 app = FastAPI(title="GBP Autopilot", version="1.0")
@@ -503,6 +509,84 @@ def what_works(location: str, request: Request, refresh: bool = False) -> dict:
     except AuthError as exc:
         raise HTTPException(401, str(exc))
     return capabilities.to_dict(report)
+
+
+@app.get("/api/categories")
+def categories(request: Request, q: str = "", region: str = "") -> dict:
+    """Search Google's category list.
+
+    Choosing a category by typing its name is guesswork otherwise: Google
+    writes "Make-up artist" with a hyphen and has no "Makeup studio" at all,
+    and finding that out by guessing on a live profile is not acceptable.
+    """
+    guard(request)
+    if not q.strip():
+        return {"categories": []}
+    try:
+        client = Client(auth.credentials(interactive=False))
+        code = region or _region_for_active() or "US"
+        found = client.search_categories(q, code, "en", 12)
+    except (ApiError, AuthError) as exc:
+        raise HTTPException(502, str(exc)[:300]) from exc
+    return {"region": code,
+            "categories": [{"id": c.get("name", ""),
+                            "name": c.get("displayName", "")} for c in found]}
+
+
+def _region_for_active() -> str:
+    """The country of the selected profile, so the picker offers its list."""
+    try:
+        cfg = config.load()
+        _account, location = profiles.resolve(cfg)
+        client = Client(auth.credentials(interactive=False))
+        loc = client.location(location, read_mask="storefrontAddress")
+        return (loc.get("storefrontAddress") or {}).get("regionCode", "")
+    except Exception:  # noqa: BLE001 - a missing region just means default
+        return ""
+
+
+@app.get("/api/details/{location:path}")
+def profile_details(location: str, request: Request) -> dict:
+    """What is on the profile right now: address, categories, contact."""
+    guard(request)
+    profile = profiles.get(location)
+    if not profile:
+        raise HTTPException(404, "That business is not connected.")
+    try:
+        client = Client(auth.credentials(interactive=False))
+        loc = client.location(
+            location,
+            read_mask=("name,title,categories,storefrontAddress,phoneNumbers,"
+                       "websiteUri,serviceItems"))
+    except (ApiError, AuthError) as exc:
+        raise HTTPException(502, str(exc)[:300]) from exc
+
+    address = loc.get("storefrontAddress") or {}
+    cats = loc.get("categories") or {}
+    items = loc.get("serviceItems") or []
+    described = sum(1 for i in items if _service_has_description(i))
+    return {
+        "title": loc.get("title", ""),
+        "address_line": " ".join(address.get("addressLines") or []),
+        "locality": address.get("locality", ""),
+        "postal_code": address.get("postalCode", ""),
+        "region": address.get("regionCode", ""),
+        "phone": (loc.get("phoneNumbers") or {}).get("primaryPhone", ""),
+        "website": loc.get("websiteUri", ""),
+        "primary": {"id": (cats.get("primaryCategory") or {}).get("name", ""),
+                    "name": (cats.get("primaryCategory") or {}).get(
+                        "displayName", "")},
+        "additional": [{"id": c.get("name", ""), "name": c.get("displayName", "")}
+                       for c in cats.get("additionalCategories") or []],
+        "services": {"total": len(items), "described": described},
+    }
+
+
+def _service_has_description(item: dict) -> bool:
+    if (item.get("structuredServiceItem") or {}).get("description"):
+        return True
+    label = (item.get("freeFormServiceItem") or {}).get("label") or {}
+    return bool(label.get("description"))
 
 
 @app.get("/api/fix/plan/{location:path}")
