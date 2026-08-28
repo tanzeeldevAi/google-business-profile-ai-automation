@@ -39,8 +39,24 @@ Hard rules:
   ("call us on the number on our profile"), no excuses, no arguing, no legal
   language. Do not apologise more than once.
 - Never say "we appreciate you taking the time" or anything like it.
+- Where it fits naturally, name the treatment they had and the city. Google
+  indexes owner replies, so "glad the hydrafacial went well" is worth more
+  than "glad it went well" -- but only when the review says which treatment it
+  was. Forcing the city into a reply that has no room for it reads as spam and
+  is worse than leaving it out. Never do both in one short reply.
 
 Output the reply text only."""
+
+# A one-star review with warm words in it is almost always a misfired tap, not
+# a complaint. Arguing with it, or apologising for a problem nobody reported,
+# both read badly in public. This is worth its own instruction because the
+# default handling of "low stars" gets it wrong.
+MISMATCH_NOTE = """
+NOTE: the star rating is low but the words are positive. This is usually a
+mis-tap on the rating, not a complaint. Do not apologise, do not ask what went
+wrong, and do not treat it as negative. Thank them for what they actually
+said, and mention once, lightly and without pressure, that they are welcome to
+update the rating if it was not what they meant."""
 
 
 @dataclass
@@ -93,7 +109,38 @@ def draft_reply(review: dict, cfg: dict) -> str:
            if not comment else
            "Reply to what they actually wrote.")
     )
-    return llm.generate(prompt, system=SYSTEM, cfg=cfg.get("llm", {}))
+
+    system = SYSTEM
+    if stars and stars <= 3 and _reads_positive(comment):
+        system += "\n" + MISMATCH_NOTE
+    elif stars and stars <= 3 and not comment:
+        # A silent low rating. There is nothing to acknowledge, so asking them
+        # to describe it is the only honest move -- guessing at a fault the
+        # business may not have had is worse than saying nothing.
+        prompt += ("\n\nThey gave a low rating and wrote nothing at all, so "
+                   "you do not know what went wrong. Do not invent a problem "
+                   "and do not apologise for something unspecified. Say you "
+                   "would like to know what happened and invite them to get "
+                   "in touch, in one or two lines.")
+
+    return llm.generate(prompt, system=system, cfg=cfg.get("llm", {}))
+
+
+# Words that make a review read as satisfied. Only used to spot a rating that
+# contradicts its own text, so a miss costs nothing.
+_POSITIVE = ("excellent", "great", "good", "best", "satisfied", "friendly",
+             "professional", "recommend", "amazing", "lovely", "happy",
+             "perfect", "thank", "nice", "helpful", "comfortable")
+
+
+def _reads_positive(comment: str) -> bool:
+    low = (comment or "").lower()
+    if not low.strip():
+        return False
+    if any(w in low for w in ("not ", "never", "worst", "rude", "dirty",
+                              "waste", "poor", "bad ", "disappoint")):
+        return False
+    return sum(1 for w in _POSITIVE if w in low) >= 2
 
 
 def plan(reviews: list[dict], cfg: dict, location_name: str) -> list[Draft]:

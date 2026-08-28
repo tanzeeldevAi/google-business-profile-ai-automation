@@ -283,6 +283,32 @@ check("critical issues are listed before low ones",
 check("a broken profile offers automatic fixes", len(bad_res.fixable) >= 2,
       str([f.rule_id for f in bad_res.fixable]))
 
+
+# CT3 flagged a compliant description for the word "offers" in "the clinic
+# offers laser hair removal" -- the most natural verb for listing services.
+# The fixer then rewrote a description that was already fine, every run.
+_ct3_ok = bad_snapshot()
+_ct3_ok.location["profile"] = {"description":
+    "Derma Glow is a skin care clinic in Peshawar. The clinic offers laser "
+    "hair removal, chemical peels and facials for women."}
+check("a description saying what a business 'offers' is not promotional",
+      rules.ct3_description_no_links(_ct3_ok, {}).passed,
+      rules.ct3_description_no_links(_ct3_ok, {}).detail)
+
+_ct3_promo = bad_snapshot()
+_ct3_promo.location["profile"] = {"description":
+    "Special offer this month. Book now for a free quote."}
+check("a real promotional offer is still caught",
+      not rules.ct3_description_no_links(_ct3_promo, {}).passed)
+
+_ct3_ws = bad_snapshot()
+_ct3_ws.location["profile"] = {"description":
+    "We are a wholesale supplier of salon products in Peshawar."}
+check("'wholesale' is not mistaken for a sale",
+      _ct3_ws.location["profile"]["description"].count("sale") == 1
+      and rules.ct3_description_no_links(_ct3_ws, {}).passed,
+      rules.ct3_description_no_links(_ct3_ws, {}).detail)
+
 print(f"\n  {pass_count} passed, {len(fails)} failed\n")
 for f in fails:
     print(f"  x {f}")

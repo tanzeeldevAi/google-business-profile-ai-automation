@@ -185,14 +185,37 @@ def extract_phones(text: str, limit: int = 10,
     return list(dict.fromkeys(out))[:limit]
 
 
-def fetch_page(url: str, timeout: int = 20, user_agent: str = "") -> Page:
+def fetch_page(url: str, timeout: int = 45, user_agent: str = "") -> Page:
+    """Read one page.
+
+    The timeout is generous and a slow read is retried once, because the sites
+    this reads are small-business sites on shared hosting. A real client's site
+    answered in anything from 1.4 to 17 seconds depending on whether its cache
+    was warm; against the old 20-second limit that surfaced as "could not reach
+    it (ReadTimeout)", and the audit reported the business's own working
+    website as unreachable. Being slow is not the same as being down, and
+    saying so cost the operator a wrong high-severity finding.
+    """
     page = Page(url=_normalise(url), fetched_at=time.time())
-    try:
-        resp = requests.get(url, timeout=timeout,
-                            headers={"User-Agent": user_agent or UA,
-                                     "Accept": "text/html,*/*"})
-    except requests.RequestException as exc:
-        page.error = f"could not reach it ({type(exc).__name__})"
+    resp = None
+    for attempt in range(2):
+        try:
+            resp = requests.get(url, timeout=timeout,
+                                headers={"User-Agent": user_agent or UA,
+                                         "Accept": "text/html,*/*"})
+            break
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt == 0:
+                time.sleep(1.5)  # a cold cache usually warms on the second ask
+                continue
+            page.error = (f"could not reach it ({type(exc).__name__} twice, "
+                          f"{timeout}s each)")
+            return page
+        except requests.RequestException as exc:
+            page.error = f"could not reach it ({type(exc).__name__})"
+            return page
+    if resp is None:
+        page.error = "could not reach it"
         return page
 
     if resp.status_code in (401, 403, 406, 429):
@@ -396,7 +419,7 @@ def load(cfg: dict, website_uri: str = "", *, force: bool = False,
                       f"({len(cached.services)} service page(s))")
             return cached
 
-    timeout = int(wcfg.get("timeout_seconds", 20))
+    timeout = int(wcfg.get("timeout_seconds", 45))
     limit = int(wcfg.get("max_service_pages", 8))
     ua = wcfg.get("user_agent", "") or ""
     site = Site(base_url=base, fetched_at=time.time())

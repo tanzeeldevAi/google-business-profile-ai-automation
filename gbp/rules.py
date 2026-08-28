@@ -603,10 +603,23 @@ def ct3_description_no_links(s: Snapshot, cfg: dict) -> Finding:
     # to strip a phone number that is not there is worse than missing one.
     if site.extract_phones(desc):
         bad.append("what looks like a phone number")
-    offers = [w for w in ("% off", "discount", "sale", "free quote", "offer",
-                          "call now", "book now") if w in desc.lower()]
+    # Matched on whole words, and "offer" only as a noun phrase.
+    #
+    # A plain substring search flagged a compliant description for the word
+    # "offers" in "the aesthetic clinic offers laser hair removal" -- the most
+    # natural verb there is for listing what a business does. The fixer would
+    # then rewrite a description that was already fine, and the finding came
+    # back HIGH every run. "sale" did the same inside "wholesale".
+    lowered = desc.lower()
+    offers = [w for w in ("% off", "discount", "free quote", "call now",
+                          "book now", "on sale", "sale now", "offer ends")
+              if w in lowered]
+    # "offer" and "sale" only count as promotional in a promotional phrase.
+    if re.search(r"\b(special|limited|exclusive|introductory|seasonal)\s+"
+                 r"(offers?|deals?|prices?)\b", lowered):
+        offers.append("a promotional offer")
     if offers:
-        bad.append("promotional wording (" + ", ".join(offers) + ")")
+        bad.append("promotional wording (" + ", ".join(sorted(set(offers))) + ")")
     ok = not bad
     return Finding(
         "CT3", "Description follows Google's content rules", "high", "content", ok,
