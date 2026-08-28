@@ -144,7 +144,7 @@ export default function Overview() {
 function Row({ ok, label, hint }: { ok?: boolean; label: string; hint?: string }) {
   return (
     <li className="flex items-center gap-2">
-      <span className={`w-2 h-2 rounded-full ${ok ? "bg-good" : hint ? "bg-ink-3" : "bg-bad"}`} />
+      <span className={`w-2 h-2 rounded-full ${ok ? "bg-g-green" : hint ? "bg-g-grey600" : "bg-g-red"}`} />
       <span className={ok ? "" : "text-g-grey700"}>{label}</span>
       {!ok && hint && <span className="text-xs text-g-grey600 ml-auto">{hint}</span>}
     </li>

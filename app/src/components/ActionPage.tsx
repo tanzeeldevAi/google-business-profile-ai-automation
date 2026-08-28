@@ -90,15 +90,15 @@ export function Field({
 }) {
   return (
     <label className="block mb-3">
-      <span className="text-sm text-ink-2">{label}</span>
+      <span className="text-sm text-g-grey700">{label}</span>
       <input
         type="text"
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg bg-base border border-line px-3 py-2 text-sm outline-none focus:border-accent"
+        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm outline-none focus:border-g-blue"
       />
-      {hint && <span className="text-xs text-ink-3 block mt-1">{hint}</span>}
+      {hint && <span className="text-xs text-g-grey600 block mt-1">{hint}</span>}
     </label>
   );
 }
@@ -121,7 +121,7 @@ export function Toggle({
       />
       <span className="text-sm">
         {label}
-        {hint && <span className="block text-xs text-ink-3">{hint}</span>}
+        {hint && <span className="block text-xs text-g-grey600">{hint}</span>}
       </span>
     </label>
   );

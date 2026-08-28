@@ -58,7 +58,7 @@ export default function AuditPage() {
             key={t}
             onClick={() => setTab(t)}
             className={`px-3 py-1.5 rounded-lg text-sm border transition ${
-              tab === t ? "bg-g-grey100 border-accent" : "border-g-grey300 text-g-grey700 hover:text-ink"
+              tab === t ? "bg-g-grey100 border-g-blue" : "border-g-grey300 text-g-grey700 hover:text-g-grey900"
             }`}
           >
             {t === "issues"

@@ -147,7 +147,7 @@ function Text({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm outline-none focus:border-accent"
+        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm outline-none focus:border-g-blue"
       />
     </label>
   );
@@ -171,7 +171,7 @@ function Area({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm font-mono outline-none focus:border-accent resize-y"
+        className="mt-1 w-full rounded-lg bg-white border border-g-grey300 px-3 py-2 text-sm font-mono outline-none focus:border-g-blue resize-y"
       />
       {hint && <span className="text-xs text-g-grey600 block mt-1">{hint}</span>}
     </label>

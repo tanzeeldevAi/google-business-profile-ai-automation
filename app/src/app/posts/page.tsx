@@ -65,7 +65,7 @@ export default function PostsPage() {
                 <button
                   onClick={() => setUrl("")}
                   className={`text-xs px-2.5 py-1 rounded border ${
-                    url === "" ? "border-accent bg-white" : "border-g-grey300 text-g-grey600"
+                    url === "" ? "border-g-blue bg-white" : "border-g-grey300 text-g-grey600"
                   }`}
                 >
                   rotate automatically
@@ -75,7 +75,7 @@ export default function PostsPage() {
                     key={p}
                     onClick={() => setUrl(p)}
                     className={`text-xs px-2.5 py-1 rounded border truncate max-w-xs ${
-                      url === p ? "border-accent bg-white" : "border-g-grey300 text-g-grey600"
+                      url === p ? "border-g-blue bg-white" : "border-g-grey300 text-g-grey600"
                     }`}
                     title={p}
                   >
