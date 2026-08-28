@@ -35,6 +35,10 @@ export type Profile = {
   last_audit: string | null;
   history: { score: number; when: string }[];
   alerts: number;
+  // False when this profile was connected under a DIFFERENT Google sign-in.
+  // One token covers one account, so nothing can act on it until that account
+  // is signed in again.
+  reachable: boolean;
 };
 
 export type ProfileSettings = {

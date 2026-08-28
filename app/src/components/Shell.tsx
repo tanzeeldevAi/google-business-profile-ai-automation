@@ -214,10 +214,14 @@ function ProfilePicker({
             {profiles.map((p) => (
               <button
                 key={p.location}
+                disabled={!p.reachable}
+                title={p.reachable ? undefined
+                  : "Connected under a different Google account. Sign in with that account to use it."}
                 onClick={() => { onSelect(p.location); setOpen(false); }}
-                className={`w-full text-left px-3 py-2.5 hover:bg-panel-2 border-b border-line/60 last:border-0 ${
-                  p.location === active?.location ? "bg-panel-2" : ""
-                }`}
+                className={`w-full text-left px-3 py-2.5 border-b border-line/60 last:border-0 ${
+                  !p.reachable ? "opacity-40 cursor-not-allowed"
+                    : "hover:bg-panel-2"
+                } ${p.location === active?.location ? "bg-panel-2" : ""}`}
               >
                 <div className="flex items-center gap-2">
                   <span className="font-medium truncate">{p.title || p.location}</span>
@@ -233,6 +237,9 @@ function ProfilePicker({
                 <div className="text-xs text-ink-3 flex gap-2">
                   {p.city && <span>{p.city}</span>}
                   {p.alerts > 0 && <span className="text-bad">{p.alerts} alert(s)</span>}
+                  {!p.reachable && (
+                    <span className="text-warn ml-auto">other account</span>
+                  )}
                 </div>
               </button>
             ))}

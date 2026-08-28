@@ -383,11 +383,16 @@ def auth_signout(request: Request) -> dict:
 def list_profiles(request: Request) -> dict:
     guard(request)
     db.init()
+    reachable = profiles.reachable_accounts()
     out = []
     for p in profiles.all_profiles():
         history = db.audit_history(p["location"], limit=8)
         out.append({
             "location": p["location"], "account": p["account"],
+            # False means: connected under a different Google sign-in. Every
+            # command against it will fail until that account is signed in
+            # again, so the UI greys it out rather than letting it be picked.
+            "reachable": (not reachable) or p["account"] in reachable,
             "title": p["title"], "city": p["city"],
             "settings": p["settings"],
             "score": history[0]["score"] if history else None,
@@ -412,7 +417,9 @@ def discover(request: Request) -> dict:
     try:
         client = Client(auth.credentials(interactive=False))
         found = []
+        seen_accounts: list[str] = []
         for acct in client.accounts():
+            seen_accounts.append(acct["name"])
             for loc in client.locations(
                     acct["name"],
                     read_mask="name,title,storefrontAddress,metadata"):
@@ -427,9 +434,22 @@ def discover(request: Request) -> dict:
     except ApiError as exc:
         raise HTTPException(502, str(exc))
 
-    if found and not profiles.active():
+    # Remember which Google accounts this sign-in can actually see. ONE token
+    # covers ONE account, so profiles connected under a previous sign-in are
+    # still listed but cannot be acted on -- and a command against one fails
+    # with a 404 that explains nothing.
+    profiles.set_reachable_accounts(seen_accounts)
+
+    # If the selected profile belongs to an account we are no longer signed in
+    # to, move the selection somewhere usable rather than leaving it pointing
+    # at something every command will fail on.
+    active = profiles.active()
+    current = profiles.get(active) if active else None
+    if found and (not current or current["account"] not in seen_accounts):
         profiles.set_active(found[0]["location"])
-    return {"found": found, "active": profiles.active()}
+
+    return {"found": found, "active": profiles.active(),
+            "accounts": seen_accounts}
 
 
 class Select(BaseModel):

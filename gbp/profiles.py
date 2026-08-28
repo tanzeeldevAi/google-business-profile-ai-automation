@@ -33,6 +33,7 @@ from . import db
 PER_PROFILE_KEYS = ("business", "website", "competitors", "holidays", "posts")
 
 ACTIVE_KEY = "active_location"
+REACHABLE_KEY = "reachable_accounts"
 
 
 def _merge(base: dict, over: dict) -> dict:
@@ -118,6 +119,35 @@ def set_active(location: str) -> None:
         cx.execute("INSERT INTO app_state (k, v) VALUES (?,?) "
                    "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
                    (ACTIVE_KEY, location))
+
+
+def set_reachable_accounts(accounts: list[str]) -> None:
+    """Which Google accounts the CURRENT sign-in can see.
+
+    One OAuth token covers one Google account. An agency that connects a second
+    account keeps the first account's profiles in the list -- they are still
+    real -- but nothing can be done with them until that account is signed in
+    again. Recording this is what lets the app say so instead of failing with a
+    404 nobody can interpret.
+    """
+    with db.conn() as cx:
+        cx.execute("INSERT INTO app_state (k, v) VALUES (?,?) "
+                   "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+                   (REACHABLE_KEY, json.dumps(sorted(set(accounts)))))
+
+
+def reachable_accounts() -> list[str]:
+    """Empty means "never discovered", which is treated as "assume reachable"
+    rather than greying out every profile on a fresh install."""
+    with db.conn() as cx:
+        row = cx.execute("SELECT v FROM app_state WHERE k=?",
+                         (REACHABLE_KEY,)).fetchone()
+    if not row:
+        return []
+    try:
+        return json.loads(row["v"]) or []
+    except json.JSONDecodeError:
+        return []
 
 
 def resolve(cfg: dict, wanted: str = "") -> tuple[str, str]:

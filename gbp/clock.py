@@ -24,10 +24,20 @@ import requests
 WARN_SECONDS = 60
 FAIL_SECONDS = 300
 
+# How long a reading is reused. A GOOD reading is cached properly -- the clock
+# is not going to drift in five minutes. A BAD one is re-checked almost
+# immediately, because the moment somebody fixes their clock the warning has to
+# go away. Caching a failure for five minutes means fixing the problem appears
+# to do nothing, which is how you get told "I fixed it and it still says that".
+GOOD_CACHE_SECONDS = 300
+BAD_CACHE_SECONDS = 10
+
+# Measured on the monotonic clock, so changing the wall clock -- exactly what we
+# are asking the user to do -- cannot make a cached reading look fresh forever.
 _cached: tuple[float, float] | None = None  # (checked_at, skew)
 
 
-def skew(timeout: int = 10, max_age: float = 300) -> float | None:
+def skew(timeout: int = 10, max_age: float | None = None) -> float | None:
     """Seconds this machine is AHEAD of real time. Negative means behind.
 
     Returns None when the check itself could not run -- offline, blocked, or a
@@ -36,8 +46,12 @@ def skew(timeout: int = 10, max_age: float = 300) -> float | None:
     """
     global _cached
     now = time.monotonic()
-    if _cached and (now - _cached[0]) < max_age:
-        return _cached[1]
+    if _cached:
+        age_limit = max_age if max_age is not None else (
+            GOOD_CACHE_SECONDS if abs(_cached[1]) < WARN_SECONDS
+            else BAD_CACHE_SECONDS)
+        if (now - _cached[0]) < age_limit:
+            return _cached[1]
 
     for url in ("https://accounts.google.com", "https://www.google.com"):
         try:
