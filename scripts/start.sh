@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts both halves of the web app.
+# Starts both halves of the web app (Mac and Linux; on Windows use START.bat).
 #   API  http://127.0.0.1:8790   Python, does the work
 #   UI   http://localhost:3000   Next.js, what you look at
 set -euo pipefail

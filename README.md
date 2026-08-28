@@ -240,12 +240,15 @@ python run.py daily --apply       # watch + audit + reviews, in order
 
 The full thing, as a React app you run locally.
 
+One file starts everything — the API, the app, and your browser.
+
 ```bash
-START-APP.bat          # Windows
-./START-APP.sh         # macOS / Linux
+START.bat              # Windows
+./scripts/start.sh     # macOS / Linux
 ```
 
-Then open **http://localhost:3000**.
+It opens **http://localhost:3000** once the app actually answers, rather than after a
+fixed guess at how long a cold start takes.
 
 ```
   Next.js on :3000  ──►  FastAPI on :8790  ──►  run.py  ──►  Google
