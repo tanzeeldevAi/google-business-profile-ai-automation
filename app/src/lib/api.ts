@@ -63,11 +63,20 @@ export type Capability = {
   breaks: string;
 };
 
+export type SetupItem = {
+  kind: "api" | "consent";
+  id: string;
+  name: string;
+  why: string;
+  link: string;
+};
+
 export type Capabilities = {
   project: string;
   checked_at: number;
   all_ok: boolean;
   capabilities: Capability[];
+  setup: SetupItem[];
 };
 
 export type Review = {

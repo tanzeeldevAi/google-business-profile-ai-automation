@@ -17,6 +17,7 @@ export default function SetupPage() {
   const { active, status, refresh } = useApp();
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
 
   const load = async (force = false) => {
     if (!active) return;
@@ -107,6 +108,47 @@ export default function SetupPage() {
             <li>Come back and press <strong>Re-check</strong> above.</li>
             <li>Reviews, Posts and Photos start working immediately after that.</li>
           </ol>
+        </Card>
+      )}
+
+      {caps && caps.setup?.length > 0 && (
+        <Card
+          title="One-time Google Cloud setup"
+          subtitle="Done once for the whole tool, not once per client"
+          right={
+            <Button kind="text" onClick={() => setShowSetup((v) => !v)}>
+              {showSetup ? "Hide" : "Show"}
+            </Button>
+          }
+        >
+          <p className="text-sm text-g-grey700">
+            These are settings on the{" "}
+            <strong className="text-g-grey900">Google Cloud project</strong>, not on any
+            one Google account. Switch them on once and every business you connect
+            afterwards — yours or a client&apos;s — works straight away.
+          </p>
+
+          {showSetup && (
+            <div className="mt-4 divide-y divide-g-grey200">
+              {caps.setup.map((s, i) => (
+                <div key={s.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full
+                    bg-g-grey100 text-[12px] font-medium text-g-grey700">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-g-grey900">{s.name}</div>
+                    <p className="mt-0.5 text-[13px] text-g-grey600">{s.why}</p>
+                  </div>
+                  <a href={s.link} target="_blank" rel="noreferrer" className="shrink-0">
+                    <Button kind="outlined">
+                      {s.kind === "consent" ? "Open" : "Enable"}
+                    </Button>
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 

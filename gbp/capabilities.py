@@ -190,6 +190,10 @@ def probe(client: Client, account: str, location: str,
             match = re.search(r"project=(\d+)", link)
             report.project = match.group(1) if match else ""
 
+    # Nothing failing means nothing to parse a project out of, so fall back to
+    # the client secret. The project should show whether or not it is on fire.
+    report.project = report.project or project_id()
+
     _cache[location] = (now, report)
     return report
 
@@ -201,9 +205,86 @@ def _last_month():
     return end.replace(day=1), end
 
 
+# Every API this tool needs, in the order they matter. Enabling is per PROJECT,
+# not per Google account -- do it once and every account that later signs in
+# through this OAuth client inherits it.
+REQUIRED_APIS = [
+    ("mybusinessbusinessinformation.googleapis.com",
+     "My Business Business Information API",
+     "The profile itself: categories, hours, description, services."),
+    ("mybusinessaccountmanagement.googleapis.com",
+     "My Business Account Management API",
+     "Listing which businesses an account manages."),
+    ("mybusiness.googleapis.com",
+     "Google My Business API",
+     "Reviews, Posts and Photos. The legacy one, and the one people miss."),
+    ("businessprofileperformance.googleapis.com",
+     "Business Profile Performance API",
+     "Search terms and performance figures."),
+    ("mybusinessqanda.googleapis.com",
+     "My Business Q&A API",
+     "Questions and answers."),
+    ("mybusinessplaceactions.googleapis.com",
+     "My Business Place Actions API",
+     "Booking and appointment links."),
+]
+
+
+def project_id() -> str:
+    """The Cloud project, from the OAuth client secret.
+
+    The project used to be learned only by parsing it out of a 403, which meant
+    that once everything worked the Console links lost their ?project= and sent
+    you to whichever project Google last had you in. The client secret knows it
+    all along, so ask that first.
+    """
+    try:
+        from . import config
+        data = json.loads(config.CLIENT_SECRET_PATH.read_text(encoding="utf-8"))
+        block = data.get("installed") or data.get("web") or {}
+        found = block.get("project_id") or ""
+        if found:
+            return found
+        # Older secrets omit project_id, but the client id always starts with
+        # the project NUMBER, which Console accepts just as happily.
+        return (block.get("client_id") or "").split("-", 1)[0]
+    except Exception:
+        return ""
+
+
+def setup_checklist(project: str) -> list[dict]:
+    """The one-time Google Cloud setup, as links you can click.
+
+    Returned whether or not anything is broken. A checklist you can work
+    through beats a list that only appears once something has already failed.
+    """
+    project = project or project_id()
+    items = [
+        {"kind": "api", "id": host, "name": name, "why": why,
+         "link": (f"https://console.cloud.google.com/apis/library/{host}"
+                  f"?project={project}" if project else
+                  f"https://console.cloud.google.com/apis/library/{host}")}
+        for host, name, why in REQUIRED_APIS
+    ]
+    items.append({
+        "kind": "consent",
+        "id": "consent",
+        "name": "Publish the OAuth consent screen",
+        "why": ("Two things depend on this. While it is in Testing, Google "
+                "expires every login after 7 days, and only accounts you add "
+                "as Test Users can sign in at all -- so connecting a new "
+                "client fails. Publishing fixes both."),
+        "link": (f"https://console.cloud.google.com/auth/branding?project={project}"
+                 if project else
+                 "https://console.cloud.google.com/auth/branding"),
+    })
+    return items
+
+
 def to_dict(report: Report) -> dict:
     return {
         "project": report.project,
+        "setup": setup_checklist(report.project),
         "checked_at": report.checked_at,
         "all_ok": report.all_ok,
         "capabilities": [
