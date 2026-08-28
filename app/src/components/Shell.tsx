@@ -62,6 +62,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const active = profiles.find((p) => p.location === status?.active) || null;
 
+  // Stable identity. Passed to JobDrawer, which subscribes on it -- an inline
+  // arrow here would give the drawer a new prop every render.
+  const jobDone = useCallback(() => {
+    setRunning(false);
+    refresh();
+  }, [refresh]);
+
   const run = useCallback(
     async (command: string, options: Record<string, unknown> = {}, apply = false) => {
       try {
@@ -141,7 +148,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
         <JobDrawer
           jobId={jobId}
-          onDone={() => { setRunning(false); refresh(); }}
+          onDone={jobDone}
           running={running}
         />
       </div>

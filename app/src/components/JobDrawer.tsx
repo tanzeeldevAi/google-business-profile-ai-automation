@@ -23,6 +23,14 @@ export default function JobDrawer({
   const logRef = useRef<HTMLDivElement>(null);
   const doneRef = useRef(false);
 
+  // `onDone` is an inline arrow in the parent, so it is a NEW function on every
+  // render. Depending on it directly made this effect tear down the event
+  // stream and re-open it from line zero on every render -- an infinite
+  // subscribe loop that duplicated the log and made the drawer flicker. Hold it
+  // in a ref and depend only on the job id, which is what actually changes.
+  const onDoneRef = useRef(onDone);
+  useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+
   useEffect(() => {
     if (!jobId) return;
     doneRef.current = false;
@@ -36,7 +44,7 @@ export default function JobDrawer({
       if (doneRef.current) return;
       doneRef.current = true;
       setJob(j);
-      onDone();
+      onDoneRef.current();
     };
 
     const source = new EventSource(api.streamUrl(jobId));
@@ -66,7 +74,7 @@ export default function JobDrawer({
     };
 
     return () => { source.close(); if (poll) clearInterval(poll); };
-  }, [jobId, onDone]);
+  }, [jobId]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
