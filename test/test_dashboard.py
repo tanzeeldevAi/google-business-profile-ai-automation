@@ -13,6 +13,7 @@ real client's Google profile. Everything below is about that being safe:
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -103,9 +104,28 @@ def escapes(name: str) -> bool:
         return True
 
 
-for name in ["../data/token.json", "../../.env", "..\\data\\client_secret.json",
-             "sub/../../data/gbp.db", "/etc/passwd", "C:\\Windows\\win.ini"]:
-    check(f"blocked: {name}", escapes(name))
+# Separators are not the same on every platform, and the test used to assume
+# Windows ones everywhere. A backslash is a separator on Windows and an
+# ordinary character on macOS and Linux, so "..\data\client_secret.json" is an
+# escape on one and a harmless filename inside the reports folder on the
+# other. Asserting "blocked" for both made the suite fail on a Mac while the
+# guard itself was correct on both. What actually matters is that nothing
+# resolves outside the folder, so that is what is checked, per platform.
+ALWAYS_ESCAPE = ["../data/token.json", "../../.env",
+                 "sub/../../data/gbp.db", "/etc/passwd"]
+WINDOWS_ONLY = ["..\\data\\client_secret.json", "C:\\Windows\\win.ini"]
+
+for name in ALWAYS_ESCAPE:
+    check(f"blocked on every platform: {name}", escapes(name))
+
+for name in WINDOWS_ONLY:
+    if os.name == "nt":
+        check(f"blocked on Windows: {name}", escapes(name))
+    else:
+        # Not an escape here, and must not be treated as one: it is just a
+        # file that does not exist, which the server answers with a 404.
+        check(f"cannot escape on POSIX either: {name}", not escapes(name))
+
 check("an ordinary report name is allowed",
       not escapes("2026-08-27-a-business.html"))
 

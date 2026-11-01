@@ -499,12 +499,14 @@ check("a LIVE post is still reported as published",
       posts.apply(_live_draft, _fc_live, "accounts/1", LOC, "111",
                   dry_run=False) is True)
 
-# The whole reason the post was rejected.
-_phone_draft = posts.PostDraft(topic="t", text="Ring us on 0327 0155503 today.",
+# The whole reason a real post was rejected: Google refuses any post with a
+# phone number in the body, and says nothing useful about why. The number here
+# is invented -- a test fixture should never carry a real business's details.
+_phone_draft = posts.PostDraft(topic="t", text="Ring us on 0300 1234567 today.",
                                cta_type="LEARN_MORE", cta_url="https://example.com")
 posts.apply(_phone_draft, FakeClient(), "accounts/1", LOC, "111", dry_run=False)
 check("a phone number is stripped before publishing",
-      "0327" not in _phone_draft.text, _phone_draft.text)
+      "1234567" not in _phone_draft.text, _phone_draft.text)
 
 
 print("\n" + "=" * 68)
