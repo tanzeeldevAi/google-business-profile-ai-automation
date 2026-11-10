@@ -31,6 +31,14 @@ where node >nul 2>&1 || (
     pause & exit /b 1
 )
 
+REM The API's packages live in their own file, because the command line never
+REM needs them. Nothing installed them before, so a fresh install opened a
+REM minimised window that died on "No module named uvicorn" and showed nothing.
+"%PY%" -c "import fastapi, uvicorn" >nul 2>&1 || (
+    echo   Installing the API's dependencies. This happens once...
+    "%PY%" -m pip install -q -r api\requirements.txt || (pause & exit /b 1)
+)
+
 if not exist "app\node_modules" (
     echo   Installing the app's dependencies. This happens once and takes a few minutes...
     pushd app && call npm install && popd
