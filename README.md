@@ -10,7 +10,7 @@ For the local business that ranks in the map pack or doesn't get the call.
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://python.org)
 [![Google Business Profile API](https://img.shields.io/badge/Google-Business%20Profile%20API-4285F4?logo=google&logoColor=white)](#step-2--get-google-api-access-the-slow-bit)
-[![Tests](https://img.shields.io/badge/tests-682%20passing-brightgreen)](#step-4--prove-it-works-before-touching-a-live-profile)
+[![Tests](https://github.com/tanzeeldevAi/google-business-profile-ai-automation/actions/workflows/tests.yml/badge.svg)](https://github.com/tanzeeldevAi/google-business-profile-ai-automation/actions/workflows/tests.yml)
 [![Developed by Tanzeel](https://img.shields.io/badge/Developed%20by-Tanzeel-6C3EF5)](https://github.com/tanzeeldevAi)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
@@ -240,7 +240,9 @@ python run.py daily --apply       # watch + audit + reviews, in order
 
 The full thing, as a React app you run locally.
 
-One file starts everything — the API, the app, and your browser.
+One file starts everything — the API, the app, and your browser. You need
+[Node.js](https://nodejs.org) as well as Python. The first start also installs the API's own
+packages from `api/requirements.txt`, which the command line does not need.
 
 ```bash
 START.bat              # Windows
