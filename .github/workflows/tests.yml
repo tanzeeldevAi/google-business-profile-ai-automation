@@ -1,0 +1,35 @@
+name: Tests
+
+# Every test here is offline: no Google account, no network, no API keys.
+# Each file prints "N passed, M failed" and exits 1 on any failure.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is where most people run it, and the path-traversal tests
+        # behave differently there.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r api/requirements.txt
+      - name: Run every test file
+        shell: bash
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          status=0
+          for f in test/test_*.py test/smoke_test.py; do
+            echo "::group::$f"
+            python "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
